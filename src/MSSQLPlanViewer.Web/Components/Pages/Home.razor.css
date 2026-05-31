@@ -531,7 +531,8 @@ body.details-resizing {
     justify-content: center;
     gap: 0.5rem;
     margin-top: 0.75rem;
-    padding: 1rem;
+    padding: 2rem 1rem;
+    min-height: 9rem;
     border: 1px dashed #94a3b8;
     border-radius: 0.75rem;
     background: #f8fafc;

@@ -412,7 +412,7 @@
                     <PlanGraphView @key="ActivePlanId"
                                    Layout="SelectedLayout"
                                    CostHighlightThresholdPercent="GraphCostThresholdPercent"
-                                   SelectedNodeId="SelectedNodeId"
+                                   SelectedNodeId="@SelectedNodeId"
                                    ExportBaseName="@BuildExportBaseName()"
                                    OnSelectNode="HandleGraphNodeSelected"
                                    OnHoverNode="HandleNodeHovered" />
@@ -437,7 +437,7 @@
 
                     <PlanNodeTable @key="ActivePlanId"
                                    Rows="CurrentRows"
-                                   SelectedNodeId="SelectedNodeId"
+                                   SelectedNodeId="@SelectedNodeId"
                                    FocusRequestVersion="TableFocusRequestVersion"
                                    OnSelectNode="HandleTableNodeSelected"
                                    OnHoverNode="HandleNodeHovered" />
