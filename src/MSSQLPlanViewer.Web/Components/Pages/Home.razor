@@ -425,6 +425,7 @@
                         </div>
                         <div class="table-header-actions">
                             <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="DownloadTableCsv" disabled="@(CurrentRows.Count == 0)">Download CSV</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="DownloadTableMarkdown" disabled="@(CurrentRows.Count == 0)">Download Markdown</button>
                             <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CopyTableCsv" disabled="@(CurrentRows.Count == 0)">Copy</button>
                         </div>
                     </div>
@@ -876,6 +877,18 @@
         TableActionMessage = null;
         var csv = PlanTableCsvExporter.ToCsv(CurrentRows);
         await JS.InvokeVoidAsync("mssqlPlanViewerExport.downloadText", BuildExportFileName("csv"), "text/csv", csv);
+    }
+
+    private async Task DownloadTableMarkdown()
+    {
+        if (CurrentRows.Count == 0)
+        {
+            return;
+        }
+
+        TableActionMessage = null;
+        var markdown = PlanTableMarkdownExporter.ToMarkdown(CurrentRows);
+        await JS.InvokeVoidAsync("mssqlPlanViewerExport.downloadText", BuildExportFileName("md"), "text/markdown", markdown);
     }
 
     private async Task CopyTableCsv()
