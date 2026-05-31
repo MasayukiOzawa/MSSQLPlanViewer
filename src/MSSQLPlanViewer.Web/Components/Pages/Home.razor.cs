@@ -18,6 +18,8 @@ public partial class Home
 
     private int GraphCostThresholdPercent { get; set; } = 20;
 
+    private bool ShowCriticalPath { get; set; } = true;
+
     private string? ParseError { get; set; }
 
     private int TableFocusRequestVersion { get; set; }

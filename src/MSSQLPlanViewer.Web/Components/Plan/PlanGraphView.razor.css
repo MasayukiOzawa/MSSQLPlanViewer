@@ -66,6 +66,11 @@
     stroke-width: 2.2px;
 }
 
+.graph-edge.critical-path {
+    stroke: #7c3aed;
+    stroke-width: 3.4px;
+}
+
 .graph-node {
     cursor: pointer;
 }
@@ -110,6 +115,13 @@
     stroke: #0f766e;
     stroke-width: 3px;
     stroke-dasharray: 5 4;
+    pointer-events: none;
+}
+
+.node-critical-path {
+    fill: none;
+    stroke: #7c3aed;
+    stroke-width: 2.5px;
     pointer-events: none;
 }
 

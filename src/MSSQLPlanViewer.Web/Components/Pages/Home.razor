@@ -406,12 +406,17 @@
                                     <span class="input-group-text">%</span>
                                 </div>
                             </label>
+                            <label class="graph-threshold-setting graph-critical-toggle">
+                                <input type="checkbox" class="form-check-input" @bind="ShowCriticalPath" />
+                                <span class="graph-threshold-label">Critical path (est. cost)</span>
+                            </label>
                         </div>
                     </div>
 
                     <PlanGraphView @key="ActivePlanId"
                                    Layout="SelectedLayout"
                                    CostHighlightThresholdPercent="GraphCostThresholdPercent"
+                                   ShowCriticalPath="ShowCriticalPath"
                                    SelectedNodeId="@SelectedNodeId"
                                    ExportBaseName="@BuildExportBaseName()"
                                    OnSelectNode="HandleGraphNodeSelected"

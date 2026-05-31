@@ -39,11 +39,17 @@ else
                 <marker id="@MarkerId" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
                     <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
                 </marker>
+                <marker id="@CriticalMarkerId" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed" />
+                </marker>
             </defs>
 
             @foreach (var edge in Layout.Edges)
             {
-                <path d="@BuildEdgePath(edge)" class="graph-edge" marker-end="@($"url(#{MarkerId})")" />
+                var isCriticalEdge = ShowCriticalPath && edge.IsOnCriticalPath;
+                <path d="@BuildEdgePath(edge)"
+                      class="@(isCriticalEdge ? "graph-edge critical-path" : "graph-edge")"
+                      marker-end="@($"url(#{(isCriticalEdge ? CriticalMarkerId : MarkerId)})")" />
             }
 
             @foreach (var node in Layout.Nodes)
@@ -58,12 +64,13 @@ else
                 var iconOriginX = iconTileX + 8;
                 var iconOriginY = iconTileY + 8;
                 var hasDashedOutline = IsAboveCostThreshold(node);
+                var isCriticalNode = ShowCriticalPath && node.IsOnCriticalPath;
                 var contentX = bodyX + 66;
                 var contentY = bodyY + 29;
                 var meterRatio = (double)Math.Max(0.08m, node.CostRatio);
                 var meterWidth = Math.Max(18d, (node.Width - 32) * meterRatio);
 
-                <g class="@GetNodeClass(node, isSelected, isScan, hasDashedOutline)"
+                <g class="@GetNodeClass(node, isSelected, isScan, hasDashedOutline, isCriticalNode)"
                    data-node-id="@node.NodeId"
                    @onclick="@(() => SelectNode(node.NodeId))"
                    @onmouseenter="@(() => HoverNode(node.NodeId))"
@@ -77,6 +84,10 @@ else
                     @if (hasDashedOutline)
                     {
                         <rect x="@(bodyX - 6)" y="@(bodyY - 6)" width="@(node.Width + 12)" height="@(node.Height + 12)" rx="24" ry="24" class="node-cost-highlight" />
+                    }
+                    @if (isCriticalNode)
+                    {
+                        <rect x="@(bodyX - 3)" y="@(bodyY - 3)" width="@(node.Width + 6)" height="@(node.Height + 6)" rx="21" ry="21" class="node-critical-path" />
                     }
                     <rect x="@iconTileX" y="@iconTileY" width="34" height="34" rx="10" ry="10" class="node-icon-tile" fill="@GetIconTileFill(isSelected)" />
 
@@ -191,6 +202,9 @@ else
     public int CostHighlightThresholdPercent { get; set; } = 20;
 
     [Parameter]
+    public bool ShowCriticalPath { get; set; } = true;
+
+    [Parameter]
     public string? ExportBaseName { get; set; }
 
     [Parameter]
@@ -221,6 +235,8 @@ else
     private string ZoomLabel => $"{zoom:P0}";
 
     private string MarkerId => $"plan-arrow-{Layout?.StatementId ?? "default"}";
+
+    private string CriticalMarkerId => $"plan-arrow-critical-{Layout?.StatementId ?? "default"}";
 
     private double ScaledWidth => Layout is null ? 0 : Layout.Width * (double)zoom;
 
@@ -345,7 +361,7 @@ else
         return $"M {edge.X1} {edge.Y1} C {edge.X1} {controlY1}, {edge.X2} {controlY2}, {edge.X2} {edge.Y2}";
     }
 
-    private string GetNodeClass(GraphNodeLayout node, bool isSelected, bool isScan, bool hasDashedOutline)
+    private string GetNodeClass(GraphNodeLayout node, bool isSelected, bool isScan, bool hasDashedOutline, bool isCriticalNode)
     {
         var classes = new List<string> { "graph-node" };
 
@@ -367,6 +383,11 @@ else
         if (hasDashedOutline)
         {
             classes.Add("cost-over-threshold");
+        }
+
+        if (isCriticalNode)
+        {
+            classes.Add("critical-path");
         }
 
         return string.Join(" ", classes);

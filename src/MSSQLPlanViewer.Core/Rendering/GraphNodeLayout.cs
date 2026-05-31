@@ -12,4 +12,5 @@ public sealed record GraphNodeLayout(
     double Width,
     double Height,
     decimal CostRatio,
-    bool HasWarnings);
+    bool HasWarnings,
+    bool IsOnCriticalPath);

@@ -393,6 +393,11 @@ h1 {
     width: 7rem;
 }
 
+.graph-critical-toggle {
+    gap: 0.4rem;
+    cursor: pointer;
+}
+
 .details-header-actions {
     display: flex;
     align-items: center;
