@@ -16,10 +16,19 @@ else
             <button class="btn btn-outline-secondary btn-sm" @onclick="ResetZoom">Reset</button>
             <button class="btn btn-outline-secondary btn-sm" @onclick="ZoomIn" disabled="@(!CanZoomIn)">+</button>
         </div>
+        <div class="graph-export-controls">
+            <button class="btn btn-outline-secondary btn-sm" @onclick="ExportSvg">Export SVG</button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="ExportPng">Export PNG</button>
+            @if (!string.IsNullOrEmpty(exportError))
+            {
+                <span class="graph-export-error" role="alert">@exportError</span>
+            }
+        </div>
     </div>
 
     <div class="graph-shell" @ref="graphShellRef">
-        <svg class="graph-canvas"
+        <svg @ref="svgRef"
+             class="graph-canvas"
              viewBox="@($"0 0 {Layout.Width} {Layout.Height}")"
              preserveAspectRatio="xMinYMin meet"
              width="@ScaledWidth"
@@ -182,6 +191,9 @@ else
     public int CostHighlightThresholdPercent { get; set; } = 20;
 
     [Parameter]
+    public string? ExportBaseName { get; set; }
+
+    [Parameter]
     public EventCallback<string> OnSelectNode { get; set; }
 
     [Parameter]
@@ -197,6 +209,10 @@ else
     private bool resetViewportPending;
     private bool focusSelectedNodePending;
     private ElementReference graphShellRef;
+
+    private ElementReference svgRef;
+
+    private string? exportError;
 
     private bool CanZoomIn => zoom < MaxZoom;
 
@@ -252,6 +268,53 @@ else
     private Task HoverNode(string nodeId) => OnHoverNode.InvokeAsync(nodeId);
 
     private Task ClearHoveredNode() => OnHoverNode.InvokeAsync((string?)null);
+
+    private async Task ExportSvg()
+    {
+        exportError = null;
+        try
+        {
+            await JS.InvokeVoidAsync("mssqlPlanViewerExport.exportSvg", svgRef, $"{ExportFileBaseName}.svg");
+        }
+        catch (Exception)
+        {
+            exportError = "Unable to export the graph as SVG.";
+        }
+    }
+
+    private async Task ExportPng()
+    {
+        exportError = null;
+        try
+        {
+            var succeeded = await JS.InvokeAsync<bool>("mssqlPlanViewerExport.exportPng", svgRef, $"{ExportFileBaseName}.png");
+            if (!succeeded)
+            {
+                exportError = "PNG export is unavailable in this browser. Try SVG instead.";
+            }
+        }
+        catch (Exception)
+        {
+            exportError = "Unable to export the graph as PNG. Try SVG instead.";
+        }
+    }
+
+    private string ExportFileBaseName
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(ExportBaseName))
+            {
+                return ExportBaseName;
+            }
+
+            var statementId = Layout?.StatementId;
+            var raw = string.IsNullOrWhiteSpace(statementId) ? "plan-graph" : $"plan-graph-stmt{statementId}";
+            var safe = new string(raw.Select(character => char.IsLetterOrDigit(character) ? character : '-').ToArray())
+                .Trim('-');
+            return string.IsNullOrEmpty(safe) ? "plan-graph" : safe;
+        }
+    }
 
     private void ZoomIn()
     {

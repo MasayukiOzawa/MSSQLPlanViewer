@@ -24,6 +24,17 @@
     gap: 0.5rem;
 }
 
+.graph-export-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.graph-export-error {
+    color: #b91c1c;
+    font-size: 0.8rem;
+}
+
 .graph-shell {
     --graph-viewport-height: 34rem;
     width: 100%;

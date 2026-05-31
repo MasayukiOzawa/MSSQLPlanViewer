@@ -522,3 +522,143 @@ body.details-resizing {
         grid-column: span 2;
     }
 }
+
+/* A1: file input dropzone */
+.file-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding: 1rem;
+    border: 1px dashed #94a3b8;
+    border-radius: 0.75rem;
+    background: #f8fafc;
+    cursor: pointer;
+}
+
+.file-dropzone:hover {
+    border-color: #0f766e;
+    background: #f0fdfa;
+}
+
+.file-dropzone-text {
+    font-size: 0.85rem;
+    color: #475569;
+}
+
+.file-load-messages {
+    list-style: none;
+    margin: 0.75rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.file-load-message {
+    font-size: 0.85rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 0.5rem;
+}
+
+.file-load-message.is-success {
+    color: #0f766e;
+    background: #f0fdfa;
+}
+
+.file-load-message.is-error {
+    color: #b91c1c;
+    background: #fef2f2;
+}
+
+/* A2: plan tabs */
+.plan-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.plan-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem 0.25rem 0.75rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #f8fafc;
+}
+
+.plan-tab.is-active {
+    border-color: #0f766e;
+    background: #f0fdfa;
+}
+
+.plan-tab-label {
+    border: none;
+    background: transparent;
+    color: #0f172a;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+}
+
+.plan-tab.is-active .plan-tab-label {
+    color: #0f766e;
+}
+
+.plan-tab-close {
+    border: none;
+    background: transparent;
+    color: #64748b;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.25rem;
+}
+
+.plan-tab-close:hover {
+    color: #b91c1c;
+}
+
+/* E1: compare card */
+.compare-selectors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.compare-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    color: #475569;
+    min-width: 14rem;
+}
+
+.compare-table .delta-up {
+    color: #b91c1c;
+    font-weight: 600;
+}
+
+.compare-table .delta-down {
+    color: #0f766e;
+    font-weight: 600;
+}
+
+/* B2: table header actions */
+.table-header-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.table-action-message {
+    margin: 0 0 0.5rem;
+    font-size: 0.8rem;
+    color: #475569;
+}

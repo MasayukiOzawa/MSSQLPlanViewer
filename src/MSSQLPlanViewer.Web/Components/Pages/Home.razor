@@ -3,6 +3,8 @@
 @inject IShowplanParser ShowplanParser
 @inject IPlanGraphLayoutService GraphLayoutService
 @inject IPlanTableProjector TableProjector
+@inject IPlanComparisonService PlanComparisonService
+@inject ILogger<Home> Logger
 
 <PageTitle>MSSQL Plan Viewer</PageTitle>
 
@@ -33,6 +35,21 @@
                   spellcheck="false"
                   placeholder="Paste SQL Server Showplan XML here."></textarea>
 
+        <label class="file-dropzone">
+            <InputFile OnChange="HandleFilesSelected" multiple accept=".sqlplan,.xml" />
+            <span class="file-dropzone-text">Drop .sqlplan or .xml files here, or click to choose</span>
+        </label>
+
+        @if (FileLoadMessages.Count > 0)
+        {
+            <ul class="file-load-messages" aria-live="polite">
+                @foreach (var message in FileLoadMessages)
+                {
+                    <li class="file-load-message @(message.IsError ? "is-error" : "is-success")">@message.Text</li>
+                }
+            </ul>
+        }
+
         @if (!string.IsNullOrWhiteSpace(ParseError))
         {
             <div class="alert alert-danger parse-error" role="alert">
@@ -40,6 +57,86 @@
             </div>
         }
     </section>
+
+    @if (Plans.Count > 0)
+    {
+        <section class="plan-tabs card-surface" role="tablist" aria-label="Loaded plans">
+            @foreach (var plan in Plans)
+            {
+                var isActive = plan.Id == ActivePlanId;
+                <div class="plan-tab @(isActive ? "is-active" : null)" role="tab" aria-selected="@isActive">
+                    <button type="button" class="plan-tab-label" @onclick="() => SelectPlan(plan.Id)">@plan.Label</button>
+                    <button type="button"
+                            class="plan-tab-close"
+                            aria-label="@($"Close {plan.Label}")"
+                            @onclick="() => ClosePlan(plan.Id)">&times;</button>
+                </div>
+            }
+        </section>
+    }
+
+    @if (Plans.Count > 1)
+    {
+        <section class="card-surface compare-card">
+            <div class="section-header compact">
+                <div>
+                    <span class="summary-label">Compare plans</span>
+                </div>
+            </div>
+            <div class="compare-selectors">
+                <label class="compare-selector">
+                    <span>Plan A</span>
+                    <select class="form-select form-select-sm" value="@ComparePlanAId" @onchange="OnComparePlanAChanged">
+                        @foreach (var plan in Plans)
+                        {
+                            <option value="@plan.Id">@plan.Label</option>
+                        }
+                    </select>
+                </label>
+                <label class="compare-selector">
+                    <span>Plan B</span>
+                    <select class="form-select form-select-sm" value="@ComparePlanBId" @onchange="OnComparePlanBChanged">
+                        @foreach (var plan in Plans)
+                        {
+                            <option value="@plan.Id">@plan.Label</option>
+                        }
+                    </select>
+                </label>
+            </div>
+
+            @{
+                var comparison = BuildComparison();
+            }
+            @if (comparison is not null)
+            {
+                <div class="summary-table-shell">
+                    <table class="table table-sm align-middle summary-table compare-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Metric</th>
+                                <th scope="col" class="numeric">Plan A</th>
+                                <th scope="col" class="numeric">Plan B</th>
+                                <th scope="col" class="numeric">Delta</th>
+                                <th scope="col" class="numeric">Delta %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var metric in comparison.Metrics)
+                            {
+                                <tr>
+                                    <td>@metric.MetricName</td>
+                                    <td class="numeric-cell">@FormatMetricValue(metric.ValueA, metric.IsInteger)</td>
+                                    <td class="numeric-cell">@FormatMetricValue(metric.ValueB, metric.IsInteger)</td>
+                                    <td class="numeric-cell @GetDeltaClass(metric.Delta)">@FormatMetricDelta(metric.Delta, metric.IsInteger)</td>
+                                    <td class="numeric-cell @GetDeltaClass(metric.Delta)">@FormatMetricPercent(metric.DeltaPercent)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
 
     @if (SelectedStatement is null)
     {
@@ -312,9 +409,11 @@
                         </div>
                     </div>
 
-                    <PlanGraphView Layout="SelectedLayout"
+                    <PlanGraphView @key="ActivePlanId"
+                                   Layout="SelectedLayout"
                                    CostHighlightThresholdPercent="GraphCostThresholdPercent"
                                    SelectedNodeId="SelectedNodeId"
+                                   ExportBaseName="@BuildExportBaseName()"
                                    OnSelectNode="HandleGraphNodeSelected"
                                    OnHoverNode="HandleNodeHovered" />
                 </section>
@@ -324,9 +423,19 @@
                         <div>
                             <h2>Table view</h2>
                         </div>
+                        <div class="table-header-actions">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="DownloadTableCsv" disabled="@(CurrentRows.Count == 0)">Download CSV</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CopyTableCsv" disabled="@(CurrentRows.Count == 0)">Copy</button>
+                        </div>
                     </div>
 
-                    <PlanNodeTable Rows="CurrentRows"
+                    @if (!string.IsNullOrEmpty(TableActionMessage))
+                    {
+                        <p class="table-action-message" aria-live="polite">@TableActionMessage</p>
+                    }
+
+                    <PlanNodeTable @key="ActivePlanId"
+                                   Rows="CurrentRows"
                                    SelectedNodeId="SelectedNodeId"
                                    FocusRequestVersion="TableFocusRequestVersion"
                                    OnSelectNode="HandleTableNodeSelected"
@@ -373,23 +482,79 @@
 
     private string? ParseError { get; set; }
 
-    private string? SelectedStatementId { get; set; }
-
-    private string? SelectedNodeId { get; set; }
-
-    private string? HoveredNodeId { get; set; }
-
     private int TableFocusRequestVersion { get; set; }
 
-    private ShowplanDocument? Document { get; set; }
+    private int PastedPlanCounter { get; set; }
 
-    private StatementGraphLayout? SelectedLayout { get; set; }
+    private readonly List<LoadedPlan> Plans = new();
 
-    private IReadOnlyList<PlanTableRow> CurrentRows { get; set; } = Array.Empty<PlanTableRow>();
+    private Guid? ActivePlanId { get; set; }
+
+    private Guid? ComparePlanAId { get; set; }
+
+    private Guid? ComparePlanBId { get; set; }
+
+    private readonly List<FileLoadMessage> FileLoadMessages = new();
+
+    private string? TableActionMessage { get; set; }
 
     private ElementReference detailsPaneRef;
 
     private ElementReference detailsResizeHandleRef;
+
+    private LoadedPlan? ActivePlan => Plans.FirstOrDefault(plan => plan.Id == ActivePlanId);
+
+    private ShowplanDocument? Document => ActivePlan?.Document;
+
+    private string? SelectedStatementId
+    {
+        get => ActivePlan?.SelectedStatementId;
+        set
+        {
+            if (ActivePlan is not null)
+            {
+                ActivePlan.SelectedStatementId = value;
+            }
+        }
+    }
+
+    private string? SelectedNodeId
+    {
+        get => ActivePlan?.SelectedNodeId;
+        set
+        {
+            if (ActivePlan is not null)
+            {
+                ActivePlan.SelectedNodeId = value;
+            }
+        }
+    }
+
+    private string? HoveredNodeId
+    {
+        get => ActivePlan?.HoveredNodeId;
+        set
+        {
+            if (ActivePlan is not null)
+            {
+                ActivePlan.HoveredNodeId = value;
+            }
+        }
+    }
+
+    private StatementGraphLayout? SelectedLayout
+    {
+        get => ActivePlan?.SelectedLayout;
+        set
+        {
+            if (ActivePlan is not null)
+            {
+                ActivePlan.SelectedLayout = value;
+            }
+        }
+    }
+
+    private IReadOnlyList<PlanTableRow> CurrentRows => ActivePlan?.CurrentRows ?? Array.Empty<PlanTableRow>();
 
     private StatementPlan? SelectedStatement =>
         Document?.Statements.FirstOrDefault(statement => statement.StatementId == SelectedStatementId)
@@ -402,6 +567,8 @@
         SelectedStatement?.Nodes.FirstOrDefault(node => node.NodeId == HoveredNodeId);
 
     private PlanNode? OverlayNode => HoveredNode ?? SelectedNode;
+
+    private sealed record FileLoadMessage(string Text, bool IsError);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -531,22 +698,255 @@
 
     private void ParsePlan()
     {
+        ParseError = null;
+        FileLoadMessages.Clear();
+
         try
         {
-            Document = ShowplanParser.Parse(XmlInput);
-            ParseError = null;
-            SelectStatement(Document.Statements[0].StatementId);
+            var document = ShowplanParser.Parse(XmlInput);
+            PastedPlanCounter++;
+            AddPlan(document, $"Pasted #{PastedPlanCounter}");
         }
         catch (ShowplanParseException exception)
         {
-            ClearResultState();
             ParseError = exception.Message;
         }
         catch (Exception exception)
         {
-            ClearResultState();
             ParseError = $"An unexpected error occurred: {exception.Message}";
         }
+    }
+
+    private async Task HandleFilesSelected(InputFileChangeEventArgs args)
+    {
+        ParseError = null;
+        FileLoadMessages.Clear();
+
+        IReadOnlyList<IBrowserFile> files;
+        try
+        {
+            files = args.GetMultipleFiles(maximumFileCount: MaxFileCount);
+        }
+        catch (InvalidOperationException)
+        {
+            FileLoadMessages.Add(new FileLoadMessage($"Too many files selected; the maximum is {MaxFileCount}.", IsError: true));
+            return;
+        }
+
+        foreach (var file in files)
+        {
+            await LoadFileAsync(file);
+        }
+    }
+
+    private async Task LoadFileAsync(IBrowserFile file)
+    {
+        try
+        {
+            if (file.Size > MaxFileBytes)
+            {
+                FileLoadMessages.Add(new FileLoadMessage($"{file.Name}: file is too large (max 10 MB).", IsError: true));
+                return;
+            }
+
+            string xml;
+            await using (var stream = file.OpenReadStream(MaxFileBytes))
+            using (var memory = new MemoryStream())
+            {
+                await stream.CopyToAsync(memory);
+                memory.Position = 0;
+                using var reader = new StreamReader(memory, detectEncodingFromByteOrderMarks: true);
+                xml = await reader.ReadToEndAsync();
+            }
+
+            var document = ShowplanParser.Parse(xml);
+            AddPlan(document, file.Name);
+            FileLoadMessages.Add(new FileLoadMessage($"{file.Name}: loaded.", IsError: false));
+        }
+        catch (ShowplanParseException exception)
+        {
+            FileLoadMessages.Add(new FileLoadMessage($"{file.Name}: {exception.Message}", IsError: true));
+        }
+        catch (Exception exception)
+        {
+            FileLoadMessages.Add(new FileLoadMessage($"{file.Name}: an unexpected error occurred.", IsError: true));
+            Logger.LogError(exception, "Failed to load plan file {FileName}", file.Name);
+        }
+    }
+
+    private void AddPlan(ShowplanDocument document, string label)
+    {
+        var plan = new LoadedPlan
+        {
+            Label = label,
+            Document = document
+        };
+
+        Plans.Add(plan);
+        ActivePlanId = plan.Id;
+        EnsureCompareSelection();
+
+        if (document.Statements.Count > 0)
+        {
+            SelectStatement(document.Statements[0].StatementId);
+        }
+    }
+
+    private void SelectPlan(Guid planId)
+    {
+        if (Plans.Any(plan => plan.Id == planId))
+        {
+            ActivePlanId = planId;
+            TableActionMessage = null;
+        }
+    }
+
+    private void ClosePlan(Guid planId)
+    {
+        var index = Plans.FindIndex(plan => plan.Id == planId);
+        if (index < 0)
+        {
+            return;
+        }
+
+        var wasActive = ActivePlanId == planId;
+        Plans.RemoveAt(index);
+
+        if (wasActive)
+        {
+            ActivePlanId = Plans.Count == 0
+                ? null
+                : Plans[Math.Min(index, Plans.Count - 1)].Id;
+        }
+
+        EnsureCompareSelection();
+    }
+
+    private void EnsureCompareSelection()
+    {
+        if (ComparePlanAId is null || Plans.All(plan => plan.Id != ComparePlanAId))
+        {
+            ComparePlanAId = Plans.Count > 0 ? Plans[0].Id : null;
+        }
+
+        var requiresDistinctB = Plans.Count > 1 && ComparePlanBId == ComparePlanAId;
+        if (ComparePlanBId is null || Plans.All(plan => plan.Id != ComparePlanBId) || requiresDistinctB)
+        {
+            ComparePlanBId = Plans.FirstOrDefault(plan => plan.Id != ComparePlanAId)?.Id
+                ?? (Plans.Count > 0 ? Plans[0].Id : null);
+        }
+    }
+
+    private void OnComparePlanAChanged(ChangeEventArgs args)
+    {
+        if (Guid.TryParse(args.Value?.ToString(), out var id))
+        {
+            ComparePlanAId = id;
+        }
+    }
+
+    private void OnComparePlanBChanged(ChangeEventArgs args)
+    {
+        if (Guid.TryParse(args.Value?.ToString(), out var id))
+        {
+            ComparePlanBId = id;
+        }
+    }
+
+    private PlanComparisonResult? BuildComparison()
+    {
+        var planA = Plans.FirstOrDefault(plan => plan.Id == ComparePlanAId);
+        var planB = Plans.FirstOrDefault(plan => plan.Id == ComparePlanBId);
+
+        if (planA is null || planB is null)
+        {
+            return null;
+        }
+
+        return PlanComparisonService.Compare(planA.Document, planB.Document);
+    }
+
+    private async Task DownloadTableCsv()
+    {
+        if (CurrentRows.Count == 0)
+        {
+            return;
+        }
+
+        TableActionMessage = null;
+        var csv = PlanTableCsvExporter.ToCsv(CurrentRows);
+        await JS.InvokeVoidAsync("mssqlPlanViewerExport.downloadText", BuildExportFileName("csv"), "text/csv", csv);
+    }
+
+    private async Task CopyTableCsv()
+    {
+        if (CurrentRows.Count == 0)
+        {
+            return;
+        }
+
+        var csv = PlanTableCsvExporter.ToCsv(CurrentRows);
+        var copied = await JS.InvokeAsync<bool>("mssqlPlanViewerExport.copyText", csv);
+        TableActionMessage = copied
+            ? "Table copied to the clipboard."
+            : "Unable to copy to the clipboard. Use Download CSV instead.";
+    }
+
+    private string BuildExportBaseName()
+    {
+        var label = ActivePlan?.Label ?? "plan";
+        var statementId = SelectedStatement?.StatementId;
+        var raw = string.IsNullOrWhiteSpace(statementId) ? label : $"{label}-stmt{statementId}";
+        var safe = new string(raw.Select(character => char.IsLetterOrDigit(character) ? character : '-').ToArray())
+            .Trim('-');
+
+        return string.IsNullOrEmpty(safe) ? "plan" : safe;
+    }
+
+    private string BuildExportFileName(string extension) => $"{BuildExportBaseName()}.{extension}";
+
+    private static string FormatMetricValue(double? value, bool isInteger)
+    {
+        if (value is null)
+        {
+            return string.Empty;
+        }
+
+        return isInteger
+            ? ((long)Math.Round(value.Value)).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
+            : value.Value.ToString("#,0.######", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatMetricDelta(double? delta, bool isInteger)
+    {
+        if (delta is null)
+        {
+            return string.Empty;
+        }
+
+        var sign = delta.Value > 0 ? "+" : string.Empty;
+        return sign + FormatMetricValue(delta.Value, isInteger);
+    }
+
+    private static string FormatMetricPercent(double? percent)
+    {
+        if (percent is null)
+        {
+            return string.Empty;
+        }
+
+        var sign = percent.Value > 0 ? "+" : string.Empty;
+        return sign + percent.Value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    }
+
+    private static string? GetDeltaClass(double? delta)
+    {
+        if (delta is null || delta.Value == 0d)
+        {
+            return null;
+        }
+
+        return delta.Value > 0d ? "delta-up" : "delta-down";
     }
 
     private void CloseOverlay()
@@ -568,22 +968,25 @@
 
     private void SelectStatement(string statementId)
     {
-        if (Document is null)
+        var plan = ActivePlan;
+        if (plan is null)
         {
             return;
         }
 
-        SelectedStatementId = statementId;
-        var statement = SelectedStatement;
+        TableActionMessage = null;
+        var statement = plan.Document.Statements.FirstOrDefault(item => item.StatementId == statementId)
+            ?? plan.Document.Statements.FirstOrDefault();
         if (statement is null)
         {
             return;
         }
 
-        SelectedLayout = GraphLayoutService.CreateLayout(statement);
-        CurrentRows = TableProjector.Project(statement);
-        SelectedNodeId = null;
-        HoveredNodeId = null;
+        plan.SelectedStatementId = statement.StatementId;
+        plan.SelectedLayout = GraphLayoutService.CreateLayout(statement);
+        plan.CurrentRows = TableProjector.Project(statement);
+        plan.SelectedNodeId = null;
+        plan.HoveredNodeId = null;
     }
 
     private void HandleGraphNodeSelected(string nodeId)
@@ -606,18 +1009,12 @@
     {
         XmlInput = string.Empty;
         ParseError = null;
-        ClearResultState();
+        FileLoadMessages.Clear();
     }
 
-    private void ClearResultState()
-    {
-        Document = null;
-        SelectedLayout = null;
-        SelectedStatementId = null;
-        SelectedNodeId = null;
-        HoveredNodeId = null;
-        CurrentRows = Array.Empty<PlanTableRow>();
-    }
+    private const long MaxFileBytes = 10L * 1024 * 1024;
+
+    private const int MaxFileCount = 50;
 
     private static string FormatInt(int? value) =>
         value?.ToString() ?? "n/a";
