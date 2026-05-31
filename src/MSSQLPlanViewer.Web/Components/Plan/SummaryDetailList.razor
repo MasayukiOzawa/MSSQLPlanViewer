@@ -1,0 +1,14 @@
+<dl class="summary-detail-list">
+    @foreach (var item in Items)
+    {
+        <div class="summary-detail-row">
+            <dt>@item.Name</dt>
+            <dd>@item.Value</dd>
+        </div>
+    }
+</dl>
+
+@code {
+    [Parameter]
+    public IReadOnlyList<PlanProperty> Items { get; set; } = Array.Empty<PlanProperty>();
+}

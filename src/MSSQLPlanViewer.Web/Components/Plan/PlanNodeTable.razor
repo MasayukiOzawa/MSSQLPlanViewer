@@ -1,0 +1,505 @@
+@inject IJSRuntime JS
+
+@if (Rows.Count == 0)
+{
+    <p class="empty-state">There are no operators to display.</p>
+}
+else
+{
+    <div class="table-shell" @ref="tableShellRef">
+        <table class="table table-hover align-middle plan-table">
+            <thead>
+                <tr>
+                    <th scope="col" class="node-col sticky-col sticky-col-1" aria-sort="@GetAriaSort(SortColumn.NodeId)">
+                        <button type="button" class="sort-header" @onclick="@(() => ToggleSort(SortColumn.NodeId))">Node<span class="sort-indicator">@GetSortIndicator(SortColumn.NodeId)</span></button>
+                    </th>
+                    <th scope="col" class="operator-col sticky-col sticky-col-2" aria-sort="@GetAriaSort(SortColumn.PhysicalOp)">
+                        <button type="button" class="sort-header" @onclick="@(() => ToggleSort(SortColumn.PhysicalOp))">Operator tree<span class="sort-indicator">@GetSortIndicator(SortColumn.PhysicalOp)</span></button>
+                    </th>
+                    <th scope="col" class="logical-col sticky-col sticky-col-3" aria-sort="@GetAriaSort(SortColumn.LogicalOp)">
+                        <button type="button" class="sort-header" @onclick="@(() => ToggleSort(SortColumn.LogicalOp))">Logical<span class="sort-indicator">@GetSortIndicator(SortColumn.LogicalOp)</span></button>
+                    </th>
+                    <th scope="col" class="object-col" aria-sort="@GetAriaSort(SortColumn.ObjectName)">
+                        <button type="button" class="sort-header" @onclick="@(() => ToggleSort(SortColumn.ObjectName))">Object<span class="sort-indicator">@GetSortIndicator(SortColumn.ObjectName)</span></button>
+                    </th>
+                    <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.CostRatio)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.CostRatio))">Cost %<span class="sort-indicator">@GetSortIndicator(SortColumn.CostRatio)</span></button>
+                    </th>
+                    <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.EstimatedSubtreeCost)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.EstimatedSubtreeCost))">Est. Cost<span class="sort-indicator">@GetSortIndicator(SortColumn.EstimatedSubtreeCost)</span></button>
+                    </th>
+                    <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.EstimatedCpuCost)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.EstimatedCpuCost))">Est. CPU<span class="sort-indicator">@GetSortIndicator(SortColumn.EstimatedCpuCost)</span></button>
+                    </th>
+                    <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.EstimatedIoCost)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.EstimatedIoCost))">Est. IO<span class="sort-indicator">@GetSortIndicator(SortColumn.EstimatedIoCost)</span></button>
+                    </th>
+                    <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.EstimatedRows)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.EstimatedRows))">Est. Rows<span class="sort-indicator">@GetSortIndicator(SortColumn.EstimatedRows)</span></button>
+                    </th>
+                    <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.AverageRowSize)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.AverageRowSize))">Avg. Row Size<span class="sort-indicator">@GetSortIndicator(SortColumn.AverageRowSize)</span></button>
+                    </th>
+                    <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.ActualRows)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.ActualRows))">Actual Rows<span class="sort-indicator">@GetSortIndicator(SortColumn.ActualRows)</span></button>
+                    </th>
+                    <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.ActualExecutions)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.ActualExecutions))">Actual Execs<span class="sort-indicator">@GetSortIndicator(SortColumn.ActualExecutions)</span></button>
+                    </th>
+                    <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.ActualLogicalReads)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.ActualLogicalReads))">Actual Logical Reads<span class="sort-indicator">@GetSortIndicator(SortColumn.ActualLogicalReads)</span></button>
+                    </th>
+                    <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.ActualPhysicalReads)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.ActualPhysicalReads))">Actual Physical Reads<span class="sort-indicator">@GetSortIndicator(SortColumn.ActualPhysicalReads)</span></button>
+                    </th>
+                    <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.ActualCpuMs)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.ActualCpuMs))">Actual CPU ms<span class="sort-indicator">@GetSortIndicator(SortColumn.ActualCpuMs)</span></button>
+                    </th>
+                    <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.ActualElapsedMs)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.ActualElapsedMs))">Actual Elapsed ms<span class="sort-indicator">@GetSortIndicator(SortColumn.ActualElapsedMs)</span></button>
+                    </th>
+                    <th scope="col" class="numeric warning-col" aria-sort="@GetAriaSort(SortColumn.WarningCount)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.WarningCount))">Warnings<span class="sort-indicator">@GetSortIndicator(SortColumn.WarningCount)</span></button>
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in GetVisibleRows())
+                {
+                    var isSelected = string.Equals(row.NodeId, EffectiveSelectedNodeId, StringComparison.Ordinal);
+                    var isCollapsed = collapsedNodeIds.Contains(row.NodeId);
+                    var isSorted = sortColumn is not null;
+                    var isScan = IsScanRow(row);
+                    var icon = OperatorIconRegistry.Resolve(row.PhysicalOp, row.LogicalOp);
+
+                    <tr class="@GetRowClass(isSelected, isScan)"
+                        data-table-node-id="@row.NodeId"
+                        @onmousedown="@(() => SelectNode(row.NodeId))"
+                        @onmouseenter="@(() => OnHoverNode.InvokeAsync(row.NodeId))"
+                        @onmouseleave="@(() => OnHoverNode.InvokeAsync((string?)null))">
+                        <td class="node-id node-col sticky-col sticky-col-1" @onmousedown="@(() => SelectNode(row.NodeId))">@row.NodeId</td>
+                        <td class="operator-col sticky-col sticky-col-2" @onmousedown="@(() => SelectNode(row.NodeId))">
+                            <div class="tree-operator" style="@($"--depth:{row.Depth};")">
+                                <span class="tree-guides" aria-hidden="true"></span>
+                                @if (!isSorted && row.HasChildren)
+                                {
+                                    <button type="button"
+                                            class="tree-toggle"
+                                        title="@(isCollapsed ? "Expand" : "Collapse")"
+                                            aria-label="@(isCollapsed ? "Expand node" : "Collapse node")"
+                                            aria-expanded="@(!isCollapsed)"
+                                            @onclick="@(args => ToggleNode(row.NodeId))"
+                                            @onmousedown:stopPropagation="true"
+                                            @onclick:stopPropagation="true">
+                                        @(isCollapsed ? "▸" : "▾")
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="tree-marker leaf" aria-hidden="true">
+                                        @(row.Depth == 0 ? "●" : "↳")
+                                    </span>
+                                }
+                                <span class="tree-op-icon" style="@($"--icon-color:{icon.AccentColor};")" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    @switch (icon.Kind)
+                                    {
+                                        case OperatorIconKind.Seek:
+                                            <circle cx="9" cy="9" r="6"></circle>
+                                            <line x1="13" y1="13" x2="20" y2="20"></line>
+                                            <line x1="5" y1="9" x2="11" y2="9"></line>
+                                            <line x1="9" y1="5" x2="9" y2="11"></line>
+                                            break;
+                                        case OperatorIconKind.Scan:
+                                            <rect x="3" y="3" width="18" height="16" rx="2.5"></rect>
+                                            <line x1="9" y1="3" x2="9" y2="19"></line>
+                                            <line x1="15" y1="3" x2="15" y2="19"></line>
+                                            <line x1="3" y1="8" x2="21" y2="8"></line>
+                                            <line x1="3" y1="14" x2="21" y2="14"></line>
+                                            break;
+                                        case OperatorIconKind.NestedLoops:
+                                            <circle cx="8" cy="10" r="4.5"></circle>
+                                            <circle cx="16" cy="10" r="4.5"></circle>
+                                            <path d="M 5 18 C 8 13, 16 13, 19 18"></path>
+                                            break;
+                                        case OperatorIconKind.MergeJoin:
+                                            <path d="M 4 4 L 10 12 L 4 20"></path>
+                                            <path d="M 20 4 L 14 12 L 20 20"></path>
+                                            <line x1="10" y1="12" x2="14" y2="12"></line>
+                                            break;
+                                        case OperatorIconKind.HashMatch:
+                                            <path d="M 12 2 L 20 7 L 20 17 L 12 22 L 4 17 L 4 7 Z"></path>
+                                            <line x1="8" y1="7" x2="16" y2="17"></line>
+                                            <line x1="16" y1="7" x2="8" y2="17"></line>
+                                            break;
+                                        case OperatorIconKind.Sort:
+                                            <line x1="3" y1="6" x2="16" y2="6"></line>
+                                            <line x1="3" y1="12" x2="12" y2="12"></line>
+                                            <line x1="3" y1="18" x2="8" y2="18"></line>
+                                            <path d="M 18 4 L 21 6 L 18 8"></path>
+                                            <path d="M 14 10 L 17 12 L 14 14"></path>
+                                            <path d="M 10 16 L 13 18 L 10 20"></path>
+                                            break;
+                                        case OperatorIconKind.Filter:
+                                            <path d="M 3 4 L 21 4 L 14 12 L 14 20 L 10 18 L 10 12 Z"></path>
+                                            break;
+                                        case OperatorIconKind.ComputeScalar:
+                                            <rect x="3" y="3" width="18" height="18" rx="4"></rect>
+                                            <line x1="8" y1="12" x2="16" y2="12"></line>
+                                            <line x1="12" y1="8" x2="12" y2="16"></line>
+                                            <circle cx="18" cy="18" r="1.5" class="filled"></circle>
+                                            break;
+                                        case OperatorIconKind.Parallelism:
+                                            <path d="M 12 3 L 12 10"></path>
+                                            <path d="M 12 10 L 6 18"></path>
+                                            <path d="M 12 10 L 18 18"></path>
+                                            <path d="M 12 3 L 9 6"></path>
+                                            <path d="M 12 3 L 15 6"></path>
+                                            break;
+                                        case OperatorIconKind.Aggregate:
+                                            <rect x="4" y="13" width="4" height="7" rx="1"></rect>
+                                            <rect x="10" y="9" width="4" height="11" rx="1"></rect>
+                                            <rect x="16" y="5" width="4" height="15" rx="1"></rect>
+                                            break;
+                                        case OperatorIconKind.KeyLookup:
+                                            <circle cx="8" cy="10" r="4"></circle>
+                                            <line x1="12" y1="10" x2="20" y2="10"></line>
+                                            <line x1="16" y1="10" x2="16" y2="15"></line>
+                                            <line x1="19" y1="10" x2="19" y2="13"></line>
+                                            break;
+                                        case OperatorIconKind.Spool:
+                                            <ellipse cx="12" cy="5" rx="7" ry="3"></ellipse>
+                                            <path d="M 5 5 V 17 C 5 20, 19 20, 19 17 V 5"></path>
+                                            <ellipse cx="12" cy="17" rx="7" ry="3"></ellipse>
+                                            break;
+                                        case OperatorIconKind.ConstantScan:
+                                            <rect x="3" y="3" width="18" height="18" rx="4"></rect>
+                                            <line x1="7" y1="9" x2="17" y2="9"></line>
+                                            <line x1="7" y1="14" x2="17" y2="14"></line>
+                                            break;
+                                        default:
+                                            <rect x="3" y="3" width="18" height="18" rx="4"></rect>
+                                            <path d="M 8 16 L 12 7 L 16 16 Z"></path>
+                                            break;
+                                    }
+                                </svg>
+                                </span>
+                                <span class="@GetOperatorNameClass(isScan)">@row.PhysicalOp</span>
+                                @if (row.IsParallel)
+                                {
+                                <span class="tree-pill">Parallel</span>
+                                }
+                            </div>
+                            <div class="tree-summary">@BlankIfNa(row.Summary)</div>
+                        </td>
+                        <td class="logical-col sticky-col sticky-col-3">@BlankIfNa(row.LogicalOp)</td>
+                        <td class="object-col" title="@BlankIfNa(row.ObjectName)">@BlankIfNa(row.ObjectName)</td>
+                        <td class="numeric">@PlanDisplayFormatter.FormatPercent(row.CostRatio)</td>
+                        <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatCost(row.EstimatedSubtreeCost))</td>
+                        <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatCost(row.EstimatedCpuCost))</td>
+                        <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatCost(row.EstimatedIoCost))</td>
+                        <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatNumber(row.EstimatedRows))</td>
+                        <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatNumber(row.AverageRowSize))</td>
+                        <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatNumber(row.ActualRows))</td>
+                        <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatNumber(row.ActualExecutions))</td>
+                        <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatNumber(row.ActualLogicalReads))</td>
+                        <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatNumber(row.ActualPhysicalReads))</td>
+                        <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatNumber(row.ActualCpuMs))</td>
+                        <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatNumber(row.ActualElapsedMs))</td>
+                        <td class="numeric warning-col">@row.WarningCount</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public IReadOnlyList<PlanTableRow> Rows { get; set; } = Array.Empty<PlanTableRow>();
+
+    [Parameter]
+    public string? SelectedNodeId { get; set; }
+
+    [Parameter]
+    public int FocusRequestVersion { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnSelectNode { get; set; }
+
+    [Parameter]
+    public EventCallback<string?> OnHoverNode { get; set; }
+
+    private readonly HashSet<string> collapsedNodeIds = new(StringComparer.Ordinal);
+    private SortColumn? sortColumn;
+    private bool sortDescending;
+    private string? locallySelectedNodeId;
+    private string? EffectiveSelectedNodeId => SelectedNodeId ?? locallySelectedNodeId;
+    private int previousFocusRequestVersion = -1;
+    private bool focusSelectedRowPending;
+    private ElementReference tableShellRef;
+
+    private enum SortColumn
+    {
+        NodeId,
+        PhysicalOp,
+        LogicalOp,
+        ObjectName,
+        CostRatio,
+        EstimatedSubtreeCost,
+        EstimatedCpuCost,
+        EstimatedIoCost,
+        EstimatedRows,
+        AverageRowSize,
+        ActualRows,
+        ActualExecutions,
+        ActualLogicalReads,
+        ActualPhysicalReads,
+        ActualCpuMs,
+        ActualElapsedMs,
+        WarningCount
+    }
+
+    protected override void OnParametersSet()
+    {
+        var validNodeIds = Rows.Select(row => row.NodeId).ToHashSet(StringComparer.Ordinal);
+        collapsedNodeIds.RemoveWhere(nodeId => !validNodeIds.Contains(nodeId));
+
+        if (!string.IsNullOrWhiteSpace(SelectedNodeId))
+        {
+            locallySelectedNodeId = SelectedNodeId;
+        }
+
+        if (previousFocusRequestVersion != FocusRequestVersion)
+        {
+            previousFocusRequestVersion = FocusRequestVersion;
+
+            if (!string.IsNullOrWhiteSpace(SelectedNodeId))
+            {
+                ExpandAncestorPath(SelectedNodeId);
+                focusSelectedRowPending = true;
+            }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusSelectedRowPending && !string.IsNullOrWhiteSpace(EffectiveSelectedNodeId))
+        {
+            focusSelectedRowPending = false;
+            await JS.InvokeVoidAsync("mssqlPlanViewerGraphPan.focusTableRow", tableShellRef, EffectiveSelectedNodeId);
+        }
+    }
+
+    private void ToggleNode(string nodeId)
+    {
+        if (!collapsedNodeIds.Add(nodeId))
+        {
+            collapsedNodeIds.Remove(nodeId);
+        }
+    }
+
+    private async Task SelectNode(string nodeId)
+    {
+        locallySelectedNodeId = nodeId;
+        await JS.InvokeVoidAsync("mssqlPlanViewerGraphPan.focusGlobalNode", nodeId);
+        await OnSelectNode.InvokeAsync(nodeId);
+        await OnHoverNode.InvokeAsync((string?)null);
+    }
+
+    private static string BlankIfNa(string value) =>
+        string.Equals(value, "n/a", StringComparison.OrdinalIgnoreCase) ? string.Empty : value;
+
+    private static bool IsScanRow(PlanTableRow row) =>
+        row.PhysicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase)
+        || row.LogicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase);
+
+    private static string? GetRowClass(bool isSelected, bool isScan)
+    {
+        if (isSelected && isScan)
+        {
+            return "selected scan-row";
+        }
+
+        if (isSelected)
+        {
+            return "selected";
+        }
+
+        return isScan ? "scan-row" : null;
+    }
+
+    private static string GetOperatorNameClass(bool isScan)
+        => isScan ? "tree-op-name scan-op-name" : "tree-op-name";
+
+    private void ToggleSort(SortColumn column)
+    {
+        if (sortColumn == column)
+        {
+            sortDescending = !sortDescending;
+            return;
+        }
+
+        sortColumn = column;
+        sortDescending = column is not (SortColumn.NodeId or SortColumn.PhysicalOp or SortColumn.LogicalOp or SortColumn.ObjectName);
+    }
+
+    private string GetAriaSort(SortColumn column) =>
+        sortColumn != column ? "none" : sortDescending ? "descending" : "ascending";
+
+    private string GetSortIndicator(SortColumn column) =>
+        sortColumn != column ? string.Empty : sortDescending ? "↓" : "↑";
+
+    private IEnumerable<PlanTableRow> GetVisibleRows()
+    {
+        if (sortColumn is not null)
+        {
+            foreach (var row in GetOrderedRows())
+            {
+                yield return row;
+            }
+
+            yield break;
+        }
+
+        var collapsedDepths = new Stack<int>();
+
+        foreach (var row in Rows)
+        {
+            while (collapsedDepths.Count > 0 && row.Depth <= collapsedDepths.Peek())
+            {
+                collapsedDepths.Pop();
+            }
+
+            if (collapsedDepths.Count > 0)
+            {
+                continue;
+            }
+
+            yield return row;
+
+            if (collapsedNodeIds.Contains(row.NodeId))
+            {
+                collapsedDepths.Push(row.Depth);
+            }
+        }
+    }
+
+    private IEnumerable<PlanTableRow> GetOrderedRows()
+    {
+        if (sortColumn is null || Rows.Count <= 1)
+        {
+            return Rows;
+        }
+
+        var indexByNodeId = Rows.Select((row, index) => (row.NodeId, index)).ToDictionary(item => item.NodeId, item => item.index, StringComparer.Ordinal);
+        var ordered = Rows.ToList();
+        ordered.Sort((left, right) => CompareRows(left, right, indexByNodeId));
+        return ordered;
+    }
+
+    private int CompareRows(PlanTableRow left, PlanTableRow right, IReadOnlyDictionary<string, int> indexByNodeId)
+    {
+        var result = sortColumn switch
+        {
+            SortColumn.NodeId => CompareNodeIds(left.NodeId, right.NodeId),
+            SortColumn.PhysicalOp => CompareText(left.PhysicalOp, right.PhysicalOp),
+            SortColumn.LogicalOp => CompareText(left.LogicalOp, right.LogicalOp),
+            SortColumn.ObjectName => CompareText(BlankIfNa(left.ObjectName), BlankIfNa(right.ObjectName)),
+            SortColumn.CostRatio => CompareNullable(left.CostRatio, right.CostRatio),
+            SortColumn.EstimatedSubtreeCost => CompareNullable(left.EstimatedSubtreeCost, right.EstimatedSubtreeCost),
+            SortColumn.EstimatedCpuCost => CompareNullable(left.EstimatedCpuCost, right.EstimatedCpuCost),
+            SortColumn.EstimatedIoCost => CompareNullable(left.EstimatedIoCost, right.EstimatedIoCost),
+            SortColumn.EstimatedRows => CompareNullable(left.EstimatedRows, right.EstimatedRows),
+            SortColumn.AverageRowSize => CompareNullable(left.AverageRowSize, right.AverageRowSize),
+            SortColumn.ActualRows => CompareNullable(left.ActualRows, right.ActualRows),
+            SortColumn.ActualExecutions => CompareNullable(left.ActualExecutions, right.ActualExecutions),
+            SortColumn.ActualLogicalReads => CompareNullable(left.ActualLogicalReads, right.ActualLogicalReads),
+            SortColumn.ActualPhysicalReads => CompareNullable(left.ActualPhysicalReads, right.ActualPhysicalReads),
+            SortColumn.ActualCpuMs => CompareNullable(left.ActualCpuMs, right.ActualCpuMs),
+            SortColumn.ActualElapsedMs => CompareNullable(left.ActualElapsedMs, right.ActualElapsedMs),
+            SortColumn.WarningCount => CompareNullable(left.WarningCount, right.WarningCount),
+            _ => 0
+        };
+
+        if (result == 0)
+        {
+            result = indexByNodeId[left.NodeId].CompareTo(indexByNodeId[right.NodeId]);
+        }
+
+        return result;
+    }
+
+    private int CompareNodeIds(string left, string right)
+    {
+        int result;
+        if (int.TryParse(left, out var leftNumber) && int.TryParse(right, out var rightNumber))
+        {
+            result = leftNumber.CompareTo(rightNumber);
+        }
+        else
+        {
+            result = StringComparer.OrdinalIgnoreCase.Compare(left, right);
+        }
+
+        return sortDescending ? -result : result;
+    }
+
+    private void ExpandAncestorPath(string nodeId)
+    {
+        var rowLookup = Rows.ToDictionary(row => row.NodeId, StringComparer.Ordinal);
+        if (!rowLookup.TryGetValue(nodeId, out var current))
+        {
+            return;
+        }
+
+        while (!string.IsNullOrWhiteSpace(current.ParentNodeId) && rowLookup.TryGetValue(current.ParentNodeId, out var parent))
+        {
+            collapsedNodeIds.Remove(parent.NodeId);
+            current = parent;
+        }
+    }
+
+    private int CompareText(string left, string right)
+    {
+        var leftHasValue = !string.IsNullOrWhiteSpace(left);
+        var rightHasValue = !string.IsNullOrWhiteSpace(right);
+
+        if (leftHasValue != rightHasValue)
+        {
+            return leftHasValue ? -1 : 1;
+        }
+
+        if (!leftHasValue)
+        {
+            return 0;
+        }
+
+        var result = StringComparer.OrdinalIgnoreCase.Compare(left, right);
+        return sortDescending ? -result : result;
+    }
+
+    private int CompareNullable<T>(T left, T right)
+        where T : struct, IComparable<T>
+    {
+        var result = left.CompareTo(right);
+        return sortDescending ? -result : result;
+    }
+
+    private int CompareNullable<T>(T? left, T? right)
+        where T : struct, IComparable<T>
+    {
+        if (left.HasValue != right.HasValue)
+        {
+            return left.HasValue ? -1 : 1;
+        }
+
+        if (!left.HasValue)
+        {
+            return 0;
+        }
+
+        var result = left.GetValueOrDefault().CompareTo(right.GetValueOrDefault());
+        return sortDescending ? -result : result;
+    }
+}

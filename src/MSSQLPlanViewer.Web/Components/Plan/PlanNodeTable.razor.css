@@ -1,0 +1,276 @@
+.table-shell {
+    overflow: auto;
+    max-height: min(65vh, 48rem);
+    scrollbar-gutter: stable both-edges;
+}
+
+.plan-table {
+    --node-col-width: 5.5rem;
+    --operator-col-width: 20rem;
+    --logical-col-width: 8rem;
+    --object-col-width: 7rem;
+    margin-bottom: 0;
+    font-size: 0.84rem;
+    line-height: 1.3;
+    min-width: max-content;
+}
+
+.plan-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f8fafc;
+    color: #475569;
+    border-bottom-width: 1px;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.sort-header {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.3rem;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    cursor: pointer;
+}
+
+.sort-header.numeric-header {
+    justify-content: flex-end;
+}
+
+.sort-indicator {
+    min-width: 0.8rem;
+    color: #2563eb;
+    font-size: 0.72rem;
+    text-align: center;
+}
+
+.plan-table tbody tr {
+    cursor: pointer;
+    --table-row-bg: #ffffff;
+}
+
+.plan-table.table-hover > tbody > tr:hover {
+    --table-row-bg: #f8fafc;
+}
+
+.plan-table tbody td {
+    padding-top: 0.38rem;
+    padding-bottom: 0.38rem;
+}
+
+.plan-table tbody tr.selected {
+    background: rgba(37, 99, 235, 0.08);
+    --table-row-bg: rgba(37, 99, 235, 0.08);
+}
+
+.plan-table tbody tr.selected:hover {
+    --table-row-bg: rgba(37, 99, 235, 0.08);
+}
+
+.plan-table tbody tr.scan-row {
+    background: rgba(254, 242, 242, 0.92);
+    --table-row-bg: rgba(254, 242, 242, 0.92);
+}
+
+.plan-table.table-hover > tbody > tr.scan-row:hover,
+.plan-table tbody tr.selected.scan-row,
+.plan-table tbody tr.selected.scan-row:hover {
+    background: rgba(254, 226, 226, 0.96);
+    --table-row-bg: rgba(254, 226, 226, 0.96);
+}
+
+.plan-table td,
+.plan-table th {
+    min-width: 110px;
+}
+
+.plan-table .node-col {
+    min-width: var(--node-col-width);
+    width: var(--node-col-width);
+}
+
+.plan-table .operator-col {
+    min-width: var(--operator-col-width);
+    width: var(--operator-col-width);
+}
+
+.plan-table .logical-col {
+    min-width: var(--logical-col-width);
+    width: var(--logical-col-width);
+}
+
+.plan-table .object-col {
+    min-width: var(--object-col-width);
+    width: var(--object-col-width);
+    max-width: var(--object-col-width);
+}
+
+.plan-table td.object-col {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.plan-table :is(th, td).sticky-col {
+    position: sticky;
+    z-index: 2;
+}
+
+.plan-table tbody td.sticky-col {
+    background: var(--table-row-bg);
+}
+
+.plan-table thead th.sticky-col {
+    z-index: 4;
+}
+
+.plan-table .sticky-col-1 {
+    left: 0;
+}
+
+.plan-table .sticky-col-2 {
+    left: var(--node-col-width);
+}
+
+.plan-table .sticky-col-3 {
+    left: calc(var(--node-col-width) + var(--operator-col-width));
+    box-shadow: 1px 0 0 #e2e8f0, 12px 0 16px -16px rgba(15, 23, 42, 0.28);
+}
+
+.plan-table .node-id {
+    font-weight: 700;
+    font-size: 0.8rem;
+}
+
+.plan-table .numeric {
+    text-align: right;
+    min-width: 6.75rem;
+}
+
+.plan-table .warning-col {
+    min-width: 7.75rem;
+    padding-right: 1.6rem;
+}
+
+.tree-operator {
+    --depth: 0;
+    --indent-step: 0.78rem;
+    --indent-width: min(calc(var(--depth) * var(--indent-step)), 5.5rem);
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 240px;
+}
+
+.tree-guides {
+    flex: 0 0 var(--indent-width);
+    align-self: stretch;
+    min-height: 1.1rem;
+    background-image: repeating-linear-gradient(
+        to right,
+        transparent 0,
+        transparent calc(var(--indent-step) - 1px),
+        #dbe3ef calc(var(--indent-step) - 1px),
+        #dbe3ef var(--indent-step)
+    );
+    opacity: 0.9;
+}
+
+.tree-marker {
+    display: inline-flex;
+    width: 1rem;
+    justify-content: center;
+    color: #64748b;
+    font-size: 0.86rem;
+}
+
+.tree-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.1rem;
+    height: 1.1rem;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #2563eb;
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
+.tree-toggle:hover {
+    background: rgba(37, 99, 235, 0.12);
+}
+
+.tree-marker.branch {
+    color: #2563eb;
+}
+
+.tree-marker.leaf {
+    color: #94a3b8;
+}
+
+.tree-op-name {
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 0.83rem;
+}
+
+.tree-op-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    color: var(--icon-color, #475569);
+    flex: 0 0 auto;
+}
+
+.tree-op-icon svg {
+    width: 1rem;
+    height: 1rem;
+    stroke: currentColor;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+}
+
+.tree-op-icon .filled {
+    fill: currentColor;
+    stroke: none;
+}
+
+.scan-op-name {
+    color: #b91c1c;
+}
+
+.tree-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.tree-summary {
+    margin-top: 0.2rem;
+    padding-left: calc(var(--indent-width) + 1.45rem);
+    color: #64748b;
+    font-size: 0.76rem;
+    line-height: 1.45;
+}

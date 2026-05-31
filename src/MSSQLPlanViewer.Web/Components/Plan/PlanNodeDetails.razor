@@ -1,0 +1,111 @@
+@if (Statement is null)
+{
+    <p class="empty-state">After you parse XML, statement and node details appear here.</p>
+}
+else if (Node is null)
+{
+    <div class="details-shell">
+        <div>
+            <div class="details-label">Statement</div>
+            <h3>#@Statement.StatementId - @Statement.StatementType</h3>
+        </div>
+
+        @if (Statement.Warnings.Count > 0)
+        {
+            <div class="warning-section">
+                <div class="details-label">Statement warnings</div>
+                <div class="warning-list">
+                    @foreach (var warning in Statement.Warnings)
+                    {
+                        <span class="warning-pill">@warning.Name</span>
+                    }
+                </div>
+            </div>
+        }
+
+        <div>
+            <div class="details-label">Statement text</div>
+            <pre class="details-code">@Statement.StatementText</pre>
+        </div>
+    </div>
+}
+else
+{
+    <div class="details-shell">
+        <div>
+            <div class="details-label">Operator</div>
+            <h3>@Node.PhysicalOp</h3>
+            <p class="details-subtitle">@Node.LogicalOp</p>
+        </div>
+
+        <dl class="details-list">
+            @foreach (var property in Node.Properties)
+            {
+                <div class="details-row">
+                    <dt>@property.Name</dt>
+                    <dd>@property.Value</dd>
+                </div>
+            }
+        </dl>
+
+        @if (Node.XmlAttributes.Count > 0)
+        {
+            <div class="xml-attributes-section">
+                <div class="details-label">XML attributes</div>
+                <div class="details-table-shell">
+                    <table class="table table-sm align-middle details-table xml-attributes-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Attribute</th>
+                                <th scope="col">Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var xmlAttribute in Node.XmlAttributes)
+                            {
+                                <tr>
+                                    <td class="xml-attribute-name">@xmlAttribute.Name</td>
+                                    <td class="xml-attribute-value">@xmlAttribute.Value</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        @if (Node.Warnings.Count > 0)
+        {
+            <div class="warning-section">
+                <div class="details-label">Warnings</div>
+                <div class="warning-list">
+                    @foreach (var warning in Node.Warnings)
+                    {
+                        <span class="warning-pill" title="@warning.Details">@warning.Name</span>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (Statement.Warnings.Count > 0)
+        {
+            <div class="warning-section">
+                <div class="details-label">Statement warnings</div>
+                <div class="warning-list">
+                    @foreach (var warning in Statement.Warnings)
+                    {
+                        <span class="warning-pill" title="@warning.Details">@warning.Name</span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public StatementPlan? Statement { get; set; }
+
+    [Parameter]
+    public PlanNode? Node { get; set; }
+}

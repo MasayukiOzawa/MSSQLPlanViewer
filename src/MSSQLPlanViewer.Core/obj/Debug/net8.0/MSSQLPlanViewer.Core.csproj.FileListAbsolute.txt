@@ -1,0 +1,11 @@
+D:\git\MSSQLPlanViewer\src\MSSQLPlanViewer.Core\bin\Debug\net8.0\MSSQLPlanViewer.Core.deps.json
+D:\git\MSSQLPlanViewer\src\MSSQLPlanViewer.Core\bin\Debug\net8.0\MSSQLPlanViewer.Core.dll
+D:\git\MSSQLPlanViewer\src\MSSQLPlanViewer.Core\bin\Debug\net8.0\MSSQLPlanViewer.Core.pdb
+D:\git\MSSQLPlanViewer\src\MSSQLPlanViewer.Core\obj\Debug\net8.0\MSSQLPlanViewer.Core.GeneratedMSBuildEditorConfig.editorconfig
+D:\git\MSSQLPlanViewer\src\MSSQLPlanViewer.Core\obj\Debug\net8.0\MSSQLPlanViewer.Core.AssemblyInfoInputs.cache
+D:\git\MSSQLPlanViewer\src\MSSQLPlanViewer.Core\obj\Debug\net8.0\MSSQLPlanViewer.Core.AssemblyInfo.cs
+D:\git\MSSQLPlanViewer\src\MSSQLPlanViewer.Core\obj\Debug\net8.0\MSSQLPlanViewer.Core.csproj.CoreCompileInputs.cache
+D:\git\MSSQLPlanViewer\src\MSSQLPlanViewer.Core\obj\Debug\net8.0\MSSQLPlanViewer.Core.dll
+D:\git\MSSQLPlanViewer\src\MSSQLPlanViewer.Core\obj\Debug\net8.0\refint\MSSQLPlanViewer.Core.dll
+D:\git\MSSQLPlanViewer\src\MSSQLPlanViewer.Core\obj\Debug\net8.0\MSSQLPlanViewer.Core.pdb
+D:\git\MSSQLPlanViewer\src\MSSQLPlanViewer.Core\obj\Debug\net8.0\ref\MSSQLPlanViewer.Core.dll

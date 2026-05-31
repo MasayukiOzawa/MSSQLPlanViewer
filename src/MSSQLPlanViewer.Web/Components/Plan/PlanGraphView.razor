@@ -1,0 +1,373 @@
+@inject IJSRuntime JS
+
+@if (Layout is null || Layout.Nodes.Count == 0)
+{
+    <p class="empty-state">There are no operators to display.</p>
+}
+else
+{
+    <div class="graph-toolbar">
+        <div class="graph-toolbar-copy">
+            <span class="graph-toolbar-label">Zoom</span>
+            <strong>@ZoomLabel</strong>
+        </div>
+        <div class="graph-zoom-controls">
+            <button class="btn btn-outline-secondary btn-sm" @onclick="ZoomOut" disabled="@(!CanZoomOut)">-</button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="ResetZoom">Reset</button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="ZoomIn" disabled="@(!CanZoomIn)">+</button>
+        </div>
+    </div>
+
+    <div class="graph-shell" @ref="graphShellRef">
+        <svg class="graph-canvas"
+             viewBox="@($"0 0 {Layout.Width} {Layout.Height}")"
+             preserveAspectRatio="xMinYMin meet"
+             width="@ScaledWidth"
+             height="@ScaledHeight"
+             role="img"
+             aria-label="Execution plan graph">
+            <defs>
+                <marker id="@MarkerId" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+                </marker>
+            </defs>
+
+            @foreach (var edge in Layout.Edges)
+            {
+                <path d="@BuildEdgePath(edge)" class="graph-edge" marker-end="@($"url(#{MarkerId})")" />
+            }
+
+            @foreach (var node in Layout.Nodes)
+            {
+                var isSelected = string.Equals(node.NodeId, SelectedNodeId, StringComparison.Ordinal);
+                var icon = OperatorIconRegistry.Resolve(node.PhysicalOp, node.LogicalOp);
+                var isScan = IsScanOperator(node, icon);
+                var bodyX = node.X;
+                var bodyY = node.Y;
+                var iconTileX = bodyX + 16;
+                var iconTileY = bodyY + 18;
+                var iconOriginX = iconTileX + 8;
+                var iconOriginY = iconTileY + 8;
+                var hasDashedOutline = IsAboveCostThreshold(node);
+                var contentX = bodyX + 66;
+                var contentY = bodyY + 29;
+                var meterRatio = (double)Math.Max(0.08m, node.CostRatio);
+                var meterWidth = Math.Max(18d, (node.Width - 32) * meterRatio);
+
+                <g class="@GetNodeClass(node, isSelected, isScan, hasDashedOutline)"
+                   data-node-id="@node.NodeId"
+                   @onclick="@(() => SelectNode(node.NodeId))"
+                   @onmouseenter="@(() => HoverNode(node.NodeId))"
+                   @onmouseleave="ClearHoveredNode">
+                    @if (isScan)
+                    {
+                        <rect x="@(bodyX - 9)" y="@(bodyY - 9)" width="@(node.Width + 18)" height="@(node.Height + 18)" rx="27" ry="27" class="scan-frame" />
+                    }
+                    <rect x="@bodyX" y="@bodyY" width="@node.Width" height="@node.Height" rx="18" ry="18" class="node-body" fill="@GetCardFill(node, isSelected)" stroke="@GetCardStroke(node, isSelected)" />
+                    <rect x="@bodyX" y="@bodyY" width="@node.Width" height="6" rx="18" ry="18" class="node-accent" fill="@GetAccentFill(node, icon)" />
+                    @if (hasDashedOutline)
+                    {
+                        <rect x="@(bodyX - 6)" y="@(bodyY - 6)" width="@(node.Width + 12)" height="@(node.Height + 12)" rx="24" ry="24" class="node-cost-highlight" />
+                    }
+                    <rect x="@iconTileX" y="@iconTileY" width="34" height="34" rx="10" ry="10" class="node-icon-tile" fill="@GetIconTileFill(isSelected)" />
+
+                    <g class="node-icon" stroke="@GetAccentFill(node, icon)" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+                        @switch (icon.Kind)
+                        {
+                            case OperatorIconKind.Seek:
+                                <circle cx="@(iconOriginX + 7)" cy="@(iconOriginY + 7)" r="6"></circle>
+                                <line x1="@(iconOriginX + 12)" y1="@(iconOriginY + 12)" x2="@(iconOriginX + 19)" y2="@(iconOriginY + 19)"></line>
+                                <line x1="@(iconOriginX + 3)" y1="@(iconOriginY + 7)" x2="@(iconOriginX + 11)" y2="@(iconOriginY + 7)"></line>
+                                <line x1="@(iconOriginX + 7)" y1="@(iconOriginY + 3)" x2="@(iconOriginX + 7)" y2="@(iconOriginY + 11)"></line>
+                                break;
+                            case OperatorIconKind.Scan:
+                                <rect x="@iconOriginX" y="@iconOriginY" width="20" height="18" rx="3"></rect>
+                                <line x1="@(iconOriginX + 7)" y1="@iconOriginY" x2="@(iconOriginX + 7)" y2="@(iconOriginY + 18)"></line>
+                                <line x1="@(iconOriginX + 14)" y1="@iconOriginY" x2="@(iconOriginX + 14)" y2="@(iconOriginY + 18)"></line>
+                                <line x1="@iconOriginX" y1="@(iconOriginY + 6)" x2="@(iconOriginX + 20)" y2="@(iconOriginY + 6)"></line>
+                                <line x1="@iconOriginX" y1="@(iconOriginY + 12)" x2="@(iconOriginX + 20)" y2="@(iconOriginY + 12)"></line>
+                                break;
+                            case OperatorIconKind.NestedLoops:
+                                <circle cx="@(iconOriginX + 7)" cy="@(iconOriginY + 9)" r="5"></circle>
+                                <circle cx="@(iconOriginX + 15)" cy="@(iconOriginY + 9)" r="5"></circle>
+                                <path d="@($"M {iconOriginX + 3} {iconOriginY + 18} C {iconOriginX + 6} {iconOriginY + 13}, {iconOriginX + 16} {iconOriginY + 13}, {iconOriginX + 19} {iconOriginY + 18}")"></path>
+                                break;
+                            case OperatorIconKind.MergeJoin:
+                                <path d="@($"M {iconOriginX} {iconOriginY + 4} L {iconOriginX + 8} {iconOriginY + 12} L {iconOriginX} {iconOriginY + 20}")"></path>
+                                <path d="@($"M {iconOriginX + 20} {iconOriginY + 4} L {iconOriginX + 12} {iconOriginY + 12} L {iconOriginX + 20} {iconOriginY + 20}")"></path>
+                                <line x1="@(iconOriginX + 8)" y1="@(iconOriginY + 12)" x2="@(iconOriginX + 12)" y2="@(iconOriginY + 12)"></line>
+                                break;
+                            case OperatorIconKind.HashMatch:
+                                <path d="@($"M {iconOriginX + 10} {iconOriginY} L {iconOriginX + 20} {iconOriginY + 6} L {iconOriginX + 20} {iconOriginY + 18} L {iconOriginX + 10} {iconOriginY + 24} L {iconOriginX} {iconOriginY + 18} L {iconOriginX} {iconOriginY + 6} Z")"></path>
+                                <line x1="@(iconOriginX + 6)" y1="@(iconOriginY + 6)" x2="@(iconOriginX + 14)" y2="@(iconOriginY + 18)"></line>
+                                <line x1="@(iconOriginX + 14)" y1="@(iconOriginY + 6)" x2="@(iconOriginX + 6)" y2="@(iconOriginY + 18)"></line>
+                                break;
+                            case OperatorIconKind.Sort:
+                                <line x1="@iconOriginX" y1="@(iconOriginY + 5)" x2="@(iconOriginX + 17)" y2="@(iconOriginY + 5)"></line>
+                                <line x1="@iconOriginX" y1="@(iconOriginY + 12)" x2="@(iconOriginX + 12)" y2="@(iconOriginY + 12)"></line>
+                                <line x1="@iconOriginX" y1="@(iconOriginY + 19)" x2="@(iconOriginX + 7)" y2="@(iconOriginY + 19)"></line>
+                                <path d="@($"M {iconOriginX + 19} {iconOriginY + 3} L {iconOriginX + 23} {iconOriginY + 5} L {iconOriginX + 19} {iconOriginY + 7}")"></path>
+                                <path d="@($"M {iconOriginX + 14} {iconOriginY + 10} L {iconOriginX + 18} {iconOriginY + 12} L {iconOriginX + 14} {iconOriginY + 14}")"></path>
+                                <path d="@($"M {iconOriginX + 9} {iconOriginY + 17} L {iconOriginX + 13} {iconOriginY + 19} L {iconOriginX + 9} {iconOriginY + 21}")"></path>
+                                break;
+                            case OperatorIconKind.Filter:
+                                <path d="@($"M {iconOriginX} {iconOriginY + 2} L {iconOriginX + 20} {iconOriginY + 2} L {iconOriginX + 12} {iconOriginY + 12} L {iconOriginX + 12} {iconOriginY + 20} L {iconOriginX + 8} {iconOriginY + 18} L {iconOriginX + 8} {iconOriginY + 12} Z")"></path>
+                                break;
+                            case OperatorIconKind.ComputeScalar:
+                                <rect x="@iconOriginX" y="@iconOriginY" width="20" height="20" rx="4"></rect>
+                                <line x1="@(iconOriginX + 6)" y1="@(iconOriginY + 10)" x2="@(iconOriginX + 14)" y2="@(iconOriginY + 10)"></line>
+                                <line x1="@(iconOriginX + 10)" y1="@(iconOriginY + 6)" x2="@(iconOriginX + 10)" y2="@(iconOriginY + 14)"></line>
+                                <circle cx="@(iconOriginX + 16)" cy="@(iconOriginY + 16)" r="1.5" fill="@GetAccentFill(node, icon)" stroke="none"></circle>
+                                break;
+                            case OperatorIconKind.Parallelism:
+                                <path d="@($"M {iconOriginX + 10} {iconOriginY + 2} L {iconOriginX + 10} {iconOriginY + 10}")"></path>
+                                <path d="@($"M {iconOriginX + 10} {iconOriginY + 10} L {iconOriginX + 4} {iconOriginY + 18}")"></path>
+                                <path d="@($"M {iconOriginX + 10} {iconOriginY + 10} L {iconOriginX + 16} {iconOriginY + 18}")"></path>
+                                <path d="@($"M {iconOriginX + 10} {iconOriginY + 2} L {iconOriginX + 7} {iconOriginY + 5}")"></path>
+                                <path d="@($"M {iconOriginX + 10} {iconOriginY + 2} L {iconOriginX + 13} {iconOriginY + 5}")"></path>
+                                break;
+                            case OperatorIconKind.Aggregate:
+                                <rect x="@iconOriginX" y="@(iconOriginY + 12)" width="4" height="8" rx="1"></rect>
+                                <rect x="@(iconOriginX + 7)" y="@(iconOriginY + 8)" width="4" height="12" rx="1"></rect>
+                                <rect x="@(iconOriginX + 14)" y="@(iconOriginY + 4)" width="4" height="16" rx="1"></rect>
+                                break;
+                            case OperatorIconKind.KeyLookup:
+                                <circle cx="@(iconOriginX + 7)" cy="@(iconOriginY + 9)" r="4.5"></circle>
+                                <line x1="@(iconOriginX + 11)" y1="@(iconOriginY + 9)" x2="@(iconOriginX + 20)" y2="@(iconOriginY + 9)"></line>
+                                <line x1="@(iconOriginX + 16)" y1="@(iconOriginY + 9)" x2="@(iconOriginX + 16)" y2="@(iconOriginY + 14)"></line>
+                                <line x1="@(iconOriginX + 19)" y1="@(iconOriginY + 9)" x2="@(iconOriginX + 19)" y2="@(iconOriginY + 12)"></line>
+                                break;
+                            case OperatorIconKind.Spool:
+                                <ellipse cx="@(iconOriginX + 10)" cy="@(iconOriginY + 4)" rx="8" ry="3.5"></ellipse>
+                                <path d="@($"M {iconOriginX + 2} {iconOriginY + 4} V {iconOriginY + 18} C {iconOriginX + 2} {iconOriginY + 22}, {iconOriginX + 18} {iconOriginY + 22}, {iconOriginX + 18} {iconOriginY + 18} V {iconOriginY + 4}")"></path>
+                                <ellipse cx="@(iconOriginX + 10)" cy="@(iconOriginY + 18)" rx="8" ry="3.5"></ellipse>
+                                break;
+                            case OperatorIconKind.ConstantScan:
+                                <rect x="@iconOriginX" y="@iconOriginY" width="20" height="20" rx="4"></rect>
+                                <line x1="@(iconOriginX + 5)" y1="@(iconOriginY + 7)" x2="@(iconOriginX + 15)" y2="@(iconOriginY + 7)"></line>
+                                <line x1="@(iconOriginX + 5)" y1="@(iconOriginY + 12)" x2="@(iconOriginX + 15)" y2="@(iconOriginY + 12)"></line>
+                                break;
+                            default:
+                                <rect x="@iconOriginX" y="@iconOriginY" width="20" height="20" rx="4"></rect>
+                                <path d="@($"M {iconOriginX + 5} {iconOriginY + 14} L {iconOriginX + 10} {iconOriginY + 5} L {iconOriginX + 15} {iconOriginY + 14} Z")"></path>
+                                break;
+                        }
+                    </g>
+
+                    <text x="@contentX" y="@contentY" class="graph-title">
+                        @Trim(node.PrimaryLabel, 30)
+                    </text>
+                    <text x="@contentX" y="@(contentY + 21)" class="graph-subtitle">
+                        @Trim(node.SecondaryLabel, 30)
+                    </text>
+                    <text x="@contentX" y="@(contentY + 42)" class="graph-meta">
+                        Node @node.NodeId | Cost @PlanDisplayFormatter.FormatPercent(node.CostRatio)
+                    </text>
+                    <rect x="@(bodyX + 16)" y="@(bodyY + node.Height - 12)" width="@(node.Width - 32)" height="4" rx="2" ry="2" class="node-meter-track" />
+                    <rect x="@(bodyX + 16)" y="@(bodyY + node.Height - 12)" width="@meterWidth" height="4" rx="2" ry="2" class="node-meter-fill" fill="@GetAccentFill(node, icon)" />
+                </g>
+            }
+        </svg>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public StatementGraphLayout? Layout { get; set; }
+
+    [Parameter]
+    public string? SelectedNodeId { get; set; }
+
+    [Parameter]
+    public int CostHighlightThresholdPercent { get; set; } = 20;
+
+    [Parameter]
+    public EventCallback<string> OnSelectNode { get; set; }
+
+    [Parameter]
+    public EventCallback<string?> OnHoverNode { get; set; }
+
+    private const decimal ZoomStep = 0.2m;
+    private const decimal MinZoom = 0.6m;
+    private const decimal MaxZoom = 2.2m;
+    private decimal zoom = 1.0m;
+    private string? previousStatementId;
+    private string? previousSelectedNodeId;
+    private bool panInitialized;
+    private bool resetViewportPending;
+    private bool focusSelectedNodePending;
+    private ElementReference graphShellRef;
+
+    private bool CanZoomIn => zoom < MaxZoom;
+
+    private bool CanZoomOut => zoom > MinZoom;
+
+    private string ZoomLabel => $"{zoom:P0}";
+
+    private string MarkerId => $"plan-arrow-{Layout?.StatementId ?? "default"}";
+
+    private double ScaledWidth => Layout is null ? 0 : Layout.Width * (double)zoom;
+
+    private double ScaledHeight => Layout is null ? 0 : Layout.Height * (double)zoom;
+
+    protected override void OnParametersSet()
+    {
+        if (!string.Equals(previousStatementId, Layout?.StatementId, StringComparison.Ordinal))
+        {
+            zoom = 1.0m;
+            previousStatementId = Layout?.StatementId;
+            resetViewportPending = true;
+        }
+
+        if (!string.Equals(previousSelectedNodeId, SelectedNodeId, StringComparison.Ordinal))
+        {
+            previousSelectedNodeId = SelectedNodeId;
+            focusSelectedNodePending = !string.IsNullOrWhiteSpace(SelectedNodeId);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Layout is not null && !panInitialized)
+        {
+            await JS.InvokeVoidAsync("mssqlPlanViewerGraphPan.init", graphShellRef);
+            panInitialized = true;
+        }
+
+        if (Layout is not null && resetViewportPending)
+        {
+            await JS.InvokeVoidAsync("mssqlPlanViewerGraphPan.reset", graphShellRef);
+            resetViewportPending = false;
+        }
+
+        if (Layout is not null && focusSelectedNodePending && !string.IsNullOrWhiteSpace(SelectedNodeId))
+        {
+            await JS.InvokeVoidAsync("mssqlPlanViewerGraphPan.focusNode", graphShellRef, SelectedNodeId);
+            focusSelectedNodePending = false;
+        }
+    }
+
+    private Task SelectNode(string nodeId) => OnSelectNode.InvokeAsync(nodeId);
+
+    private Task HoverNode(string nodeId) => OnHoverNode.InvokeAsync(nodeId);
+
+    private Task ClearHoveredNode() => OnHoverNode.InvokeAsync((string?)null);
+
+    private void ZoomIn()
+    {
+        if (CanZoomIn)
+        {
+            zoom = Math.Min(MaxZoom, zoom + ZoomStep);
+        }
+    }
+
+    private void ZoomOut()
+    {
+        if (CanZoomOut)
+        {
+            zoom = Math.Max(MinZoom, zoom - ZoomStep);
+        }
+    }
+
+    private void ResetZoom()
+    {
+        zoom = 1.0m;
+        resetViewportPending = true;
+    }
+
+    private static string BuildEdgePath(GraphEdgeLayout edge)
+    {
+        var controlY1 = edge.Y1 + 36;
+        var controlY2 = edge.Y2 - 36;
+        return $"M {edge.X1} {edge.Y1} C {edge.X1} {controlY1}, {edge.X2} {controlY2}, {edge.X2} {edge.Y2}";
+    }
+
+    private string GetNodeClass(GraphNodeLayout node, bool isSelected, bool isScan, bool hasDashedOutline)
+    {
+        var classes = new List<string> { "graph-node" };
+
+        if (isSelected)
+        {
+            classes.Add("selected");
+        }
+
+        if (node.HasWarnings)
+        {
+            classes.Add("warning");
+        }
+
+        if (isScan)
+        {
+            classes.Add("scan");
+        }
+
+        if (hasDashedOutline)
+        {
+            classes.Add("cost-over-threshold");
+        }
+
+        return string.Join(" ", classes);
+    }
+
+    private static string GetCardFill(GraphNodeLayout node, bool isSelected)
+    {
+        if (isSelected)
+        {
+            return "#eff6ff";
+        }
+
+        if (node.HasWarnings)
+        {
+            return "#fffbeb";
+        }
+
+        return "#ffffff";
+    }
+
+    private static string GetCardStroke(GraphNodeLayout node, bool isSelected)
+    {
+        if (isSelected)
+        {
+            return "#1d4ed8";
+        }
+
+        if (node.HasWarnings)
+        {
+            return "#f59e0b";
+        }
+
+        return "#cbd5e1";
+    }
+
+    private static string GetAccentFill(GraphNodeLayout node, OperatorIconDescriptor icon)
+    {
+        if (node.HasWarnings)
+        {
+            return "#f59e0b";
+        }
+
+        return node.CostRatio switch
+        {
+            >= 0.60m => icon.AccentColor,
+            >= 0.30m => "#38bdf8",
+            _ => "#94a3b8"
+        };
+    }
+
+    private static string GetIconTileFill(bool isSelected) =>
+        isSelected ? "#dbeafe" : "#f8fafc";
+
+    private bool IsAboveCostThreshold(GraphNodeLayout node)
+    {
+        var threshold = Math.Clamp(CostHighlightThresholdPercent, 0, 100);
+        return node.CostRatio * 100m > threshold;
+    }
+
+    private static bool IsScanOperator(GraphNodeLayout node, OperatorIconDescriptor icon) =>
+        icon.Kind is OperatorIconKind.Scan or OperatorIconKind.ConstantScan
+        || node.PhysicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase)
+        || node.LogicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase);
+
+    private static string Trim(string text, int maxLength) =>
+        text.Length <= maxLength ? text : $"{text[..(maxLength - 1)]}…";
+}

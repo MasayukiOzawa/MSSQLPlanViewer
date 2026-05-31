@@ -1,0 +1,56 @@
+.nav-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 2rem 1.5rem;
+}
+
+.brand-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.brand-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.brand-subtitle {
+    color: #93c5fd;
+    font-size: 0.95rem;
+}
+
+.brand-copy {
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: #cbd5e1;
+}
+
+.nav-item ::deep .nav-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.8rem 1rem;
+    color: #e2e8f0;
+    border-radius: 14px;
+    text-decoration: none;
+    background: rgba(148, 163, 184, 0.08);
+    transition: background 0.16s ease, transform 0.16s ease;
+}
+
+.nav-item ::deep .nav-link:hover {
+    background: rgba(59, 130, 246, 0.18);
+    transform: translateX(2px);
+}
+
+.nav-item ::deep a.active {
+    background: rgba(59, 130, 246, 0.28);
+    color: white;
+}
+
+@media (max-width: 760px) {
+    .nav-shell {
+        padding: 1.25rem;
+    }
+}

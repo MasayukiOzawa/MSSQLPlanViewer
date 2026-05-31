@@ -1,0 +1,25 @@
+namespace MSSQLPlanViewer.Core.Rendering;
+
+public sealed record PlanTableRow(
+    string NodeId,
+    string? ParentNodeId,
+    int Depth,
+    bool HasChildren,
+    string PhysicalOp,
+    string LogicalOp,
+    string ObjectName,
+    decimal CostRatio,
+    decimal? EstimatedSubtreeCost,
+    decimal? EstimatedCpuCost,
+    decimal? EstimatedIoCost,
+    double? EstimatedRows,
+    double? AverageRowSize,
+    double? ActualRows,
+    double? ActualExecutions,
+    double? ActualLogicalReads,
+    double? ActualPhysicalReads,
+    double? ActualCpuMs,
+    double? ActualElapsedMs,
+    int WarningCount,
+    bool IsParallel,
+    string Summary);

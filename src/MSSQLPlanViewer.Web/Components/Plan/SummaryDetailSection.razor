@@ -1,0 +1,15 @@
+@if (Items.Count > 0)
+{
+    <div class="summary-subsection">
+        <div class="summary-subtitle">@Title</div>
+        <SummaryDetailList Items="Items" />
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public IReadOnlyList<PlanProperty> Items { get; set; } = Array.Empty<PlanProperty>();
+}

@@ -1,0 +1,624 @@
+﻿@page "/"
+@inject IJSRuntime JS
+@inject IShowplanParser ShowplanParser
+@inject IPlanGraphLayoutService GraphLayoutService
+@inject IPlanTableProjector TableProjector
+
+<PageTitle>MSSQL Plan Viewer</PageTitle>
+
+<div class="viewer-page with-details">
+    <section class="hero card-surface">
+        <div>
+            <div class="eyebrow">SQL Server Showplan XML</div>
+            <h1>MSSQL Plan Viewer</h1>
+        </div>
+        <div class="hero-actions">
+            <button class="btn btn-outline-secondary" @onclick="ClearInput">Clear</button>
+        </div>
+    </section>
+
+    <section class="input-card card-surface">
+        <div class="section-header">
+            <div>
+                <h2>Showplan XML Input</h2>
+            </div>
+            <button class="btn btn-primary" @onclick="ParsePlan">
+                Parse
+            </button>
+        </div>
+
+        <textarea class="plan-input"
+                  @bind="XmlInput"
+                  @bind:event="onchange"
+                  spellcheck="false"
+                  placeholder="Paste SQL Server Showplan XML here."></textarea>
+
+        @if (!string.IsNullOrWhiteSpace(ParseError))
+        {
+            <div class="alert alert-danger parse-error" role="alert">
+                @ParseError
+            </div>
+        }
+    </section>
+
+    @if (SelectedStatement is null)
+    {
+        <aside class="details-column">
+            <section class="card-surface sticky-panel operator-pane" aria-live="polite" @ref="detailsPaneRef">
+                <div class="details-resizer"
+                     @ref="detailsResizeHandleRef"
+                     role="separator"
+                     aria-label="Resize operator details panel"
+                     aria-orientation="vertical"></div>
+                <div class="section-header compact">
+                    <div>
+                        <div class="eyebrow">Operator details</div>
+                        <h2>No operator selected</h2>
+                    </div>
+                </div>
+            </section>
+        </aside>
+    }
+
+    @if (Document is not null && SelectedStatement is not null)
+    {
+        var warningItems = GetWarningItems(SelectedStatement);
+        var statementSummaryItems = GetStatementSummaryItems(SelectedStatement);
+        var queryTimeStatsItems = GetVisibleProperties(SelectedStatement.Summary.QueryTimeStatsProperties);
+        var queryPlanItems = GetVisibleProperties(SelectedStatement.Summary.QueryPlanProperties);
+        var memoryGrantInfoItems = GetVisibleProperties(SelectedStatement.Summary.MemoryGrantInfoProperties);
+        var optimizerHardwareItems = GetVisibleProperties(SelectedStatement.Summary.OptimizerHardwareDependentProperties);
+        var missingIndexItems = SelectedStatement.Summary.MissingIndexesEntries;
+        var combinedPlanDetailRows = BuildCombinedPlanDetailRows(
+            queryTimeStatsItems,
+            statementSummaryItems,
+            queryPlanItems,
+            memoryGrantInfoItems,
+            optimizerHardwareItems);
+
+        <section class="summary-grid summary-grid-top">
+            <div class="summary-card card-surface">
+                <span class="summary-label">Schema</span>
+                <strong>@Document.Metadata.SchemaVersion</strong>
+                <small class="summary-link">
+                    @if (PlanDisplayFormatter.TryGetSafeHttpUrl(Document.Metadata.NamespaceUri, out var namespaceUrl))
+                    {
+                        <a href="@namespaceUrl" target="_blank" rel="noopener noreferrer">@Document.Metadata.NamespaceUri</a>
+                    }
+                    else
+                    {
+                        <span>@Document.Metadata.NamespaceUri</span>
+                    }
+                </small>
+            </div>
+            <div class="summary-card card-surface">
+                <span class="summary-label">Statements</span>
+                <strong>@Document.Statements.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</strong>
+                <small>Current: #@SelectedStatement.StatementId</small>
+            </div>
+            <div class="summary-card summary-statement-card card-surface">
+                <span class="summary-label">Selected statement</span>
+                <strong>#@SelectedStatement.StatementId</strong>
+                <small>@SelectedStatement.StatementType</small>
+                @if (Document.Statements.Count > 1)
+                {
+                    <select class="form-select form-select-sm statement-select" value="@SelectedStatementId" @onchange="OnStatementChanged">
+                        @foreach (var statement in Document.Statements)
+                        {
+                            <option value="@statement.StatementId">#@statement.StatementId - @statement.StatementType</option>
+                        }
+                    </select>
+                }
+            </div>
+        </section>
+
+        <section class="statement-text card-surface">
+            <div class="section-header compact">
+                <div>
+                    <h2>Statement text</h2>
+                </div>
+            </div>
+            <pre>@SelectedStatement.StatementText</pre>
+        </section>
+
+        <section class="summary-grid summary-grid-bottom">
+            <div class="summary-card card-surface">
+                <span class="summary-label">Operators</span>
+                <strong>@SelectedStatement.Nodes.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</strong>
+                <small>Total: @Document.TotalNodeCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</small>
+            </div>
+            <div class="summary-card card-surface">
+                <span class="summary-label">Warnings</span>
+                <strong>@SelectedStatement.WarningCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</strong>
+                <small>Total: @Document.TotalWarningCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</small>
+            </div>
+        </section>
+
+        @if (warningItems.Count > 0)
+        {
+            <section class="statement-summary-grid">
+                <div class="summary-card summary-detail-card summary-wide-card card-surface warning-summary-card">
+                    <span class="summary-label">Warning details</span>
+                    <SummaryDetailList Items="warningItems" />
+                </div>
+            </section>
+        }
+
+        @if (combinedPlanDetailRows.Count > 0)
+        {
+            <section class="card-surface summary-table-card">
+                <div class="section-header compact">
+                    <div>
+                        <span class="summary-label">Plan details</span>
+                    </div>
+                </div>
+                <div class="summary-table-shell">
+                    <table class="table table-sm align-middle summary-table plan-detail-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Section</th>
+                                <th scope="col">Property</th>
+                                <th scope="col">Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in combinedPlanDetailRows)
+                            {
+                                <tr>
+                                    @if (row.ShowSection)
+                                    {
+                                        <td class="object-cell section-cell" rowspan="@row.SectionRowSpan">@row.Section</td>
+                                    }
+                                    <td>@row.Name</td>
+                                    <td class="details-cell">@row.Value</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+
+        @if (SelectedStatement.Summary.OptimizerStatsUsageEntries.Count > 0)
+        {
+            <section class="card-surface summary-table-card">
+                <div class="section-header compact">
+                    <div>
+                        <span class="summary-label">OptimizerStatsUsage</span>
+                    </div>
+                </div>
+                <div class="summary-table-shell">
+                    <table class="table table-sm align-middle summary-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Table</th>
+                                <th scope="col">Statistics</th>
+                                <th scope="col">Last update</th>
+                                <th scope="col">Modification count</th>
+                                <th scope="col">Last sample</th>
+                                <th scope="col">Sampling %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in SelectedStatement.Summary.OptimizerStatsUsageEntries)
+                            {
+                                <tr>
+                                    <td>@BuildOptimizerStatsUsageTableName(item)</td>
+                                    <td>@FormatSummaryValue(item.Statistics)</td>
+                                    <td>@FormatSummaryValue(item.LastUpdate)</td>
+                                    <td class="numeric-cell">@FormatSummaryValue(item.StatisticsModificationCount)</td>
+                                    <td>@FormatSummaryValue(item.LastSample)</td>
+                                    <td class="numeric-cell">@FormatSummaryValue(item.SamplingPercent)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+
+        @if (missingIndexItems.Count > 0)
+        {
+            <section class="card-surface summary-table-card">
+                <div class="section-header compact">
+                    <div>
+                        <span class="summary-label">MissingIndexes</span>
+                    </div>
+                </div>
+                <div class="summary-table-shell">
+                    <table class="table table-sm align-middle summary-table missing-index-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Impact</th>
+                                <th scope="col">Object</th>
+                                <th scope="col">EQUALITY</th>
+                                <th scope="col">INEQUALITY</th>
+                                <th scope="col">INCLUDE</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in missingIndexItems)
+                            {
+                                <tr>
+                                    <td class="numeric-cell">@FormatSummaryValue(item.Impact)</td>
+                                    <td class="object-cell">@item.ObjectName</td>
+                                    <td class="details-cell">@FormatSummaryValue(item.EqualityColumns)</td>
+                                    <td class="details-cell">@FormatSummaryValue(item.InequalityColumns)</td>
+                                    <td class="details-cell">@FormatSummaryValue(item.IncludeColumns)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+
+        @if (SelectedStatement.Summary.WaitStatsEntries.Count > 0)
+        {
+            <section class="card-surface summary-table-card">
+                <div class="section-header compact">
+                    <div>
+                        <span class="summary-label">WaitStats</span>
+                    </div>
+                </div>
+                <div class="summary-table-shell">
+                    <table class="table table-sm align-middle summary-table wait-stats-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Wait type</th>
+                                <th scope="col">WaitTimeMs</th>
+                                <th scope="col">WaitCount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in SelectedStatement.Summary.WaitStatsEntries)
+                            {
+                                <tr>
+                                    <td class="object-cell">@item.WaitType</td>
+                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.WaitTimeMs))</td>
+                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.WaitCount))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+
+        <div class="viewer-grid @(SelectedStatement is not null ? "with-details" : null)">
+            <div class="viewer-main">
+                <section class="card-surface">
+                    <div class="section-header">
+                        <div>
+                            <h2>Graphical plan</h2>
+                        </div>
+                        <div class="graph-header-actions">
+                            <div class="section-chips">
+                                <span class="chip">@SelectedStatement!.Nodes.Count operators</span>
+                                <span class="chip">@SelectedStatement.Edges.Count edges</span>
+                            </div>
+                            <label class="graph-threshold-setting">
+                                <span class="graph-threshold-label">Dashed outline &gt; cost</span>
+                                <div class="input-group input-group-sm graph-threshold-input">
+                                    <input type="number"
+                                           class="form-control"
+                                           min="0"
+                                           max="100"
+                                           step="1"
+                                           @bind="GraphCostThresholdPercent" />
+                                    <span class="input-group-text">%</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <PlanGraphView Layout="SelectedLayout"
+                                   CostHighlightThresholdPercent="GraphCostThresholdPercent"
+                                   SelectedNodeId="SelectedNodeId"
+                                   OnSelectNode="HandleGraphNodeSelected"
+                                   OnHoverNode="HandleNodeHovered" />
+                </section>
+
+                <section class="card-surface">
+                    <div class="section-header">
+                        <div>
+                            <h2>Table view</h2>
+                        </div>
+                    </div>
+
+                    <PlanNodeTable Rows="CurrentRows"
+                                   SelectedNodeId="SelectedNodeId"
+                                   FocusRequestVersion="TableFocusRequestVersion"
+                                   OnSelectNode="HandleTableNodeSelected"
+                                   OnHoverNode="HandleNodeHovered" />
+                </section>
+            </div>
+            @if (SelectedStatement is not null)
+            {
+                <aside class="details-column">
+                    <section class="card-surface sticky-panel operator-pane" aria-live="polite" @ref="detailsPaneRef">
+                        <div class="details-resizer"
+                             @ref="detailsResizeHandleRef"
+                             role="separator"
+                             aria-label="Resize operator details panel"
+                             aria-orientation="vertical"></div>
+                        <div class="section-header compact">
+                            <div>
+                                <div class="eyebrow">Operator details</div>
+                                <h2>@(OverlayNode?.PhysicalOp ?? "No operator selected")</h2>
+                            </div>
+                            <div class="details-header-actions">
+                                @if (OverlayNode is not null)
+                                {
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CloseOverlay">Close</button>
+                                }
+                            </div>
+                        </div>
+
+                        @if (OverlayNode is not null)
+                        {
+                            <PlanNodeDetails Statement="SelectedStatement" Node="OverlayNode" />
+                        }
+                    </section>
+                </aside>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private string XmlInput { get; set; } = string.Empty;
+
+    private int GraphCostThresholdPercent { get; set; } = 20;
+
+    private string? ParseError { get; set; }
+
+    private string? SelectedStatementId { get; set; }
+
+    private string? SelectedNodeId { get; set; }
+
+    private string? HoveredNodeId { get; set; }
+
+    private int TableFocusRequestVersion { get; set; }
+
+    private ShowplanDocument? Document { get; set; }
+
+    private StatementGraphLayout? SelectedLayout { get; set; }
+
+    private IReadOnlyList<PlanTableRow> CurrentRows { get; set; } = Array.Empty<PlanTableRow>();
+
+    private ElementReference detailsPaneRef;
+
+    private ElementReference detailsResizeHandleRef;
+
+    private StatementPlan? SelectedStatement =>
+        Document?.Statements.FirstOrDefault(statement => statement.StatementId == SelectedStatementId)
+        ?? Document?.Statements.FirstOrDefault();
+
+    private PlanNode? SelectedNode =>
+        SelectedStatement?.Nodes.FirstOrDefault(node => node.NodeId == SelectedNodeId);
+
+    private PlanNode? HoveredNode =>
+        SelectedStatement?.Nodes.FirstOrDefault(node => node.NodeId == HoveredNodeId);
+
+    private PlanNode? OverlayNode => HoveredNode ?? SelectedNode;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await JS.InvokeVoidAsync("mssqlPlanViewerGraphPan.initDetailsResizer", detailsPaneRef, detailsResizeHandleRef);
+    }
+
+    private static IReadOnlyList<PlanProperty> GetStatementSummaryItems(StatementPlan statement)
+    {
+        var items = new[]
+        {
+            new PlanProperty("Estimated subtree cost", FormatSummaryValue(PlanDisplayFormatter.FormatCost(statement.Summary.EstimatedSubtreeCost))),
+            new PlanProperty("Estimated rows", FormatSummaryValue(PlanDisplayFormatter.FormatNumber(statement.Summary.EstimatedRows))),
+            new PlanProperty("Cached plan size (KB)", FormatSummaryValue(FormatInt(statement.Summary.CachedPlanSizeKb))),
+            new PlanProperty("Compile time (ms)", FormatSummaryValue(FormatInt(statement.Summary.CompileTimeMs))),
+            new PlanProperty("Compile CPU (ms)", FormatSummaryValue(FormatInt(statement.Summary.CompileCpuMs))),
+            new PlanProperty("Compile memory (KB)", FormatSummaryValue(FormatInt(statement.Summary.CompileMemoryKb))),
+            new PlanProperty("Estimated memory grant (KB)", FormatSummaryValue(PlanDisplayFormatter.FormatNumber(statement.Summary.EstimatedMemoryGrantKb))),
+            new PlanProperty("Estimated available memory grant (KB)", FormatSummaryValue(PlanDisplayFormatter.FormatNumber(statement.Summary.EstimatedAvailableMemoryGrantKb)))
+        };
+
+        return items
+            .Where(item => !string.IsNullOrWhiteSpace(item.Value))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<PlanProperty> GetVisibleProperties(IReadOnlyList<PlanProperty> properties) =>
+        properties
+            .Select(property => new PlanProperty(property.Name, FormatSummaryValue(property.Value)))
+            .Where(property => !string.IsNullOrWhiteSpace(property.Value))
+            .ToArray();
+
+    private static IReadOnlyList<PlanProperty> GetWarningItems(StatementPlan statement) =>
+        statement.Warnings
+            .Concat(statement.Nodes.SelectMany(node => node.Warnings))
+            .Select(warning => (
+                warning.Name,
+                Display: BuildWarningDisplayText(warning)))
+            .GroupBy(warning => (warning.Name, warning.Display))
+            .Select(group => new PlanProperty(
+                    group.Key.Name,
+                    group.Count() > 1
+                    ? $"{group.Count().ToString("N0", System.Globalization.CultureInfo.InvariantCulture)}x {group.Key.Display}"
+                    : group.Key.Display))
+            .OrderBy(property => property.Name, StringComparer.Ordinal)
+            .ToArray();
+
+    private static IReadOnlyList<SummaryTableRow> BuildCombinedPlanDetailRows(
+        IReadOnlyList<PlanProperty> queryTimeStatsItems,
+        IReadOnlyList<PlanProperty> statementSummaryItems,
+        IReadOnlyList<PlanProperty> queryPlanItems,
+        IReadOnlyList<PlanProperty> memoryGrantInfoItems,
+        IReadOnlyList<PlanProperty> optimizerHardwareItems)
+    {
+        var rows = new List<SummaryTableRow>();
+
+        AddSummaryRows(rows, "Query Time Stats", queryTimeStatsItems);
+        AddSummaryRows(rows, "Statement Plan Summary", statementSummaryItems);
+        AddSummaryRows(rows, "Query Plan", queryPlanItems);
+        AddSummaryRows(rows, "MemoryGrantInfo", memoryGrantInfoItems);
+        AddSummaryRows(rows, "OptimizerHardwareDependentProperties", optimizerHardwareItems);
+
+        return rows;
+    }
+
+    private static void AddSummaryRows(ICollection<SummaryTableRow> rows, string section, IReadOnlyList<PlanProperty> properties)
+    {
+        for (var index = 0; index < properties.Count; index++)
+        {
+            var property = properties[index];
+            rows.Add(new SummaryTableRow(
+                section,
+                property.Name,
+                property.Value,
+                ShowSection: index == 0,
+                SectionRowSpan: index == 0 ? properties.Count : 0));
+        }
+    }
+
+    private static string BuildOptimizerStatsUsageTableName(OptimizerStatsUsageEntry item)
+    {
+        var parts = new[] { item.Database, item.Schema, item.Table }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+
+        return parts.Length > 0
+            ? string.Join(".", parts)
+            : string.Empty;
+    }
+
+    private static string BuildWarningDisplayText(PlanWarning warning)
+    {
+        var value = !string.IsNullOrWhiteSpace(warning.Details)
+            ? warning.Details
+            : !string.IsNullOrWhiteSpace(warning.Value)
+                ? warning.Value!
+                : "true";
+
+        return FormatSummaryValue(value);
+    }
+
+    private static string FormatSummaryValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, "n/a", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        if (long.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var integerValue))
+        {
+            return integerValue.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (decimal.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var decimalValue))
+        {
+            return decimalValue.ToString("#,0.###############", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return value;
+    }
+
+    private sealed record SummaryTableRow(
+        string Section,
+        string Name,
+        string Value,
+        bool ShowSection,
+        int SectionRowSpan);
+
+    private void ParsePlan()
+    {
+        try
+        {
+            Document = ShowplanParser.Parse(XmlInput);
+            ParseError = null;
+            SelectStatement(Document.Statements[0].StatementId);
+        }
+        catch (ShowplanParseException exception)
+        {
+            ClearResultState();
+            ParseError = exception.Message;
+        }
+        catch (Exception exception)
+        {
+            ClearResultState();
+            ParseError = $"An unexpected error occurred: {exception.Message}";
+        }
+    }
+
+    private void CloseOverlay()
+    {
+        HoveredNodeId = null;
+        SelectedNodeId = null;
+    }
+
+    private void OnStatementChanged(ChangeEventArgs args)
+    {
+        var statementId = args.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(statementId))
+        {
+            return;
+        }
+
+        SelectStatement(statementId);
+    }
+
+    private void SelectStatement(string statementId)
+    {
+        if (Document is null)
+        {
+            return;
+        }
+
+        SelectedStatementId = statementId;
+        var statement = SelectedStatement;
+        if (statement is null)
+        {
+            return;
+        }
+
+        SelectedLayout = GraphLayoutService.CreateLayout(statement);
+        CurrentRows = TableProjector.Project(statement);
+        SelectedNodeId = null;
+        HoveredNodeId = null;
+    }
+
+    private void HandleGraphNodeSelected(string nodeId)
+    {
+        SelectedNodeId = nodeId;
+        TableFocusRequestVersion++;
+    }
+
+    private void HandleTableNodeSelected(string nodeId)
+    {
+        SelectedNodeId = nodeId;
+    }
+
+    private void HandleNodeHovered(string? nodeId)
+    {
+        HoveredNodeId = nodeId;
+    }
+
+    private void ClearInput()
+    {
+        XmlInput = string.Empty;
+        ParseError = null;
+        ClearResultState();
+    }
+
+    private void ClearResultState()
+    {
+        Document = null;
+        SelectedLayout = null;
+        SelectedStatementId = null;
+        SelectedNodeId = null;
+        HoveredNodeId = null;
+        CurrentRows = Array.Empty<PlanTableRow>();
+    }
+
+    private static string FormatInt(int? value) =>
+        value?.ToString() ?? "n/a";
+}

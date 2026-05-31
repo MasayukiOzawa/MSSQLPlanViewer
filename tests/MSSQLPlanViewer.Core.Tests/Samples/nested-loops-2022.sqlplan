@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2022/ShowPlan" Version="1.2" Build="16.0.1000.6">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementId="1" StatementText="SELECT h.SalesOrderID, d.ProductID FROM Sales.SalesOrderHeader AS h INNER JOIN Sales.SalesOrderDetail AS d ON h.SalesOrderID = d.SalesOrderID" StatementSubTreeCost="0.034" StatementEstRows="12">
+          <QueryPlan CachedPlanSize="32" CompileTime="6" CompileCPU="3" CompileMemory="256" EstimatedAvailableMemoryGrant="1024" EstimatedMemoryGrant="128">
+            <RelOp NodeId="0" PhysicalOp="Nested Loops" LogicalOp="Inner Join" EstimateRows="12" EstimateCPU="0.001" EstimateIO="0.002" AvgRowSize="28" EstimatedTotalSubtreeCost="0.034" Parallel="0">
+              <Warnings NoJoinPredicate="true" />
+              <OutputList>
+                <ColumnReference Database="AdventureWorks" Schema="Sales" Table="SalesOrderHeader" Column="SalesOrderID" />
+                <ColumnReference Database="AdventureWorks" Schema="Sales" Table="SalesOrderDetail" Column="ProductID" />
+              </OutputList>
+              <RunTimeInformation>
+                <RunTimeCountersPerThread Thread="0" ActualRows="12" ActualExecutions="1" ActualLogicalReads="14" ActualPhysicalReads="0" ActualCPUms="1" ActualElapsedms="2" />
+              </RunTimeInformation>
+              <NestedLoops>
+                <RelOp NodeId="1" PhysicalOp="Index Seek" LogicalOp="Index Seek" EstimateRows="12" EstimateCPU="0.0004" EstimateIO="0.0007" AvgRowSize="11" EstimatedTotalSubtreeCost="0.009">
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="12" ActualExecutions="1" ActualLogicalReads="5" ActualPhysicalReads="0" ActualCPUms="0" ActualElapsedms="1" />
+                  </RunTimeInformation>
+                  <IndexSeek>
+                    <Object Database="AdventureWorks" Schema="Sales" Table="SalesOrderHeader" Index="IX_SalesOrderHeader_SalesOrderID" IndexKind="NonClustered" />
+                  </IndexSeek>
+                </RelOp>
+                <RelOp NodeId="2" PhysicalOp="Clustered Index Seek" LogicalOp="Clustered Index Seek" EstimateRows="12" EstimateCPU="0.0008" EstimateIO="0.0014" AvgRowSize="17" EstimatedTotalSubtreeCost="0.018" Parallel="1">
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="12" ActualExecutions="12" ActualLogicalReads="9" ActualPhysicalReads="0" ActualCPUms="1" ActualElapsedms="2" />
+                  </RunTimeInformation>
+                  <IndexScan>
+                    <Object Database="AdventureWorks" Schema="Sales" Table="SalesOrderDetail" Index="PK_SalesOrderDetail" IndexKind="Clustered" />
+                  </IndexScan>
+                </RelOp>
+              </NestedLoops>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>
