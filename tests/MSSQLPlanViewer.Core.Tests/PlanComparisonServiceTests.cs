@@ -73,6 +73,44 @@ public sealed class PlanComparisonServiceTests
         Assert.Null(warnings.DeltaPercent);
     }
 
+    [Fact]
+    public void Compare_SumsQueryTimeStatsAcrossStatements()
+    {
+        var planA = CreateDocument(
+            CreateStatement("1", cpuTime: 15, elapsedTime: 19),
+            CreateStatement("2", cpuTime: 5, elapsedTime: 6));
+        var planB = CreateDocument(
+            CreateStatement("1", cpuTime: 40, elapsedTime: 50));
+
+        var result = _service.Compare(planA, planB);
+
+        var cpu = GetMetric(result, "Sum of query CPU time (ms)");
+        Assert.Equal(20d, cpu.ValueA);
+        Assert.Equal(40d, cpu.ValueB);
+        Assert.Equal(20d, cpu.Delta);
+        Assert.False(cpu.IsInteger);
+
+        var elapsed = GetMetric(result, "Sum of query elapsed time (ms)");
+        Assert.Equal(25d, elapsed.ValueA);
+        Assert.Equal(50d, elapsed.ValueB);
+        Assert.Equal(25d, elapsed.Delta);
+    }
+
+    [Fact]
+    public void Compare_ReturnsNullQueryTimeStatsWhenAbsent()
+    {
+        var planA = CreateDocument(CreateStatement("1"));
+        var planB = CreateDocument(CreateStatement("1", cpuTime: 10, elapsedTime: 12));
+
+        var result = _service.Compare(planA, planB);
+
+        var cpu = GetMetric(result, "Sum of query CPU time (ms)");
+        Assert.Null(cpu.ValueA);
+        Assert.Equal(10d, cpu.ValueB);
+        Assert.Null(cpu.Delta);
+        Assert.Null(cpu.DeltaPercent);
+    }
+
     private static PlanComparisonMetric GetMetric(PlanComparisonResult result, string name) =>
         result.Metrics.Single(metric => metric.MetricName == name);
 
@@ -84,7 +122,9 @@ public sealed class PlanComparisonServiceTests
         int nodeCount = 0,
         int warningCount = 0,
         decimal? subtreeCost = null,
-        double? estimatedRows = null)
+        double? estimatedRows = null,
+        double? cpuTime = null,
+        double? elapsedTime = null)
     {
         var nodes = Enumerable.Range(0, nodeCount)
             .Select(index => CreateNode($"{statementId}-{index}"))
@@ -93,6 +133,17 @@ public sealed class PlanComparisonServiceTests
         var warnings = Enumerable.Range(0, warningCount)
             .Select(_ => new PlanWarning("SpillToTempDb", null, null))
             .ToArray();
+
+        var queryTimeStats = new List<PlanProperty>();
+        if (cpuTime.HasValue)
+        {
+            queryTimeStats.Add(new PlanProperty("CpuTime", cpuTime.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+
+        if (elapsedTime.HasValue)
+        {
+            queryTimeStats.Add(new PlanProperty("ElapsedTime", elapsedTime.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
 
         var summary = new StatementPlanSummary(
             EstimatedSubtreeCost: subtreeCost,
@@ -104,7 +155,7 @@ public sealed class PlanComparisonServiceTests
             EstimatedAvailableMemoryGrantKb: null,
             EstimatedMemoryGrantKb: null,
             QueryPlanProperties: Array.Empty<PlanProperty>(),
-            QueryTimeStatsProperties: Array.Empty<PlanProperty>(),
+            QueryTimeStatsProperties: queryTimeStats.ToArray(),
             MemoryGrantInfoProperties: Array.Empty<PlanProperty>(),
             OptimizerHardwareDependentProperties: Array.Empty<PlanProperty>(),
             OptimizerStatsUsageEntries: Array.Empty<OptimizerStatsUsageEntry>(),

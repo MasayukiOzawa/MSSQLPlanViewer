@@ -1,3 +1,4 @@
+using System.Globalization;
 using MSSQLPlanViewer.Core.Models;
 
 namespace MSSQLPlanViewer.Core.Comparison;
@@ -27,10 +28,41 @@ public sealed class PlanComparisonService : IPlanComparisonService
                 "Sum of estimated rows",
                 SumEstimatedRows(planA),
                 SumEstimatedRows(planB),
+                isInteger: false),
+            BuildMetric(
+                "Sum of query CPU time (ms)",
+                SumQueryTimeStat(planA, "CpuTime"),
+                SumQueryTimeStat(planB, "CpuTime"),
+                isInteger: false),
+            BuildMetric(
+                "Sum of query elapsed time (ms)",
+                SumQueryTimeStat(planA, "ElapsedTime"),
+                SumQueryTimeStat(planB, "ElapsedTime"),
                 isInteger: false)
         };
 
         return new PlanComparisonResult(metrics);
+    }
+
+    private static double? SumQueryTimeStat(ShowplanDocument plan, string attributeName)
+    {
+        var sum = 0d;
+        var found = false;
+
+        foreach (var statement in plan.Statements)
+        {
+            foreach (var property in statement.Summary.QueryTimeStatsProperties)
+            {
+                if (string.Equals(property.Name, attributeName, StringComparison.Ordinal)
+                    && double.TryParse(property.Value, NumberStyles.Number, CultureInfo.InvariantCulture, out var value))
+                {
+                    sum += value;
+                    found = true;
+                }
+            }
+        }
+
+        return found ? sum : null;
     }
 
     private static double? SumEstimatedSubtreeCost(ShowplanDocument plan)
