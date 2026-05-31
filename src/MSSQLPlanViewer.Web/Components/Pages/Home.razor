@@ -35,7 +35,7 @@
                   spellcheck="false"
                   placeholder="Paste SQL Server Showplan XML here."></textarea>
 
-        <label class="file-dropzone">
+        <label class="file-dropzone" @ref="fileDropzoneRef">
             <InputFile OnChange="HandleFilesSelected" multiple accept=".sqlplan,.xml" />
             <span class="file-dropzone-text">Drop .sqlplan or .xml files here, or click to choose</span>
         </label>
@@ -503,6 +503,8 @@
 
     private ElementReference detailsResizeHandleRef;
 
+    private ElementReference fileDropzoneRef;
+
     private LoadedPlan? ActivePlan => Plans.FirstOrDefault(plan => plan.Id == ActivePlanId);
 
     private ShowplanDocument? Document => ActivePlan?.Document;
@@ -574,6 +576,11 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await JS.InvokeVoidAsync("mssqlPlanViewerGraphPan.initDetailsResizer", detailsPaneRef, detailsResizeHandleRef);
+
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("mssqlPlanViewerDropzone.init", fileDropzoneRef);
+        }
     }
 
     private static IReadOnlyList<PlanProperty> GetStatementSummaryItems(StatementPlan statement)

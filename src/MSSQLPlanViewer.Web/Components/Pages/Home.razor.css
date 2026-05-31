@@ -536,11 +536,29 @@ body.details-resizing {
     border-radius: 0.75rem;
     background: #f8fafc;
     cursor: pointer;
+    position: relative;
+}
+
+.file-dropzone ::deep input[type="file"] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    cursor: pointer;
 }
 
 .file-dropzone:hover {
     border-color: #0f766e;
     background: #f0fdfa;
+}
+
+.file-dropzone.is-dragover {
+    border-color: #0f766e;
+    border-style: solid;
+    background: #ccfbf1;
 }
 
 .file-dropzone-text {
