@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 
 namespace MSSQLPlanViewer.Core.Rendering;
@@ -8,70 +7,28 @@ namespace MSSQLPlanViewer.Core.Rendering;
 /// </summary>
 public static class PlanTableCsvExporter
 {
-    private static readonly string[] HeaderColumns =
-    [
-        "NodeId",
-        "ParentNodeId",
-        "Depth",
-        "PhysicalOp",
-        "LogicalOp",
-        "ObjectName",
-        "CostRatio",
-        "EstimatedSubtreeCost",
-        "EstimatedCpuCost",
-        "EstimatedIoCost",
-        "EstimatedRows",
-        "AverageRowSize",
-        "ActualRows",
-        "ActualExecutions",
-        "ActualLogicalReads",
-        "ActualPhysicalReads",
-        "ActualCpuMs",
-        "ActualElapsedMs",
-        "WarningCount",
-        "IsParallel",
-        "Summary"
-    ];
-
     public static string ToCsv(IReadOnlyList<PlanTableRow> rows)
     {
         ArgumentNullException.ThrowIfNull(rows);
 
+        var columns = PlanTableColumns.All;
         var builder = new StringBuilder();
-        AppendRecord(builder, HeaderColumns);
+        AppendRecord(builder, PlanTableColumns.Headers);
 
+        var fields = new string[columns.Count];
         foreach (var row in rows)
         {
-            AppendRecord(builder, BuildFields(row));
+            for (var index = 0; index < columns.Count; index++)
+            {
+                var value = columns[index].GetValue(row);
+                fields[index] = columns[index].IsText ? NeutralizeFormula(value) : value;
+            }
+
+            AppendRecord(builder, fields);
         }
 
         return builder.ToString();
     }
-
-    private static string[] BuildFields(PlanTableRow row) =>
-    [
-        NeutralizeFormula(row.NodeId),
-        NeutralizeFormula(row.ParentNodeId ?? string.Empty),
-        FormatInt(row.Depth),
-        NeutralizeFormula(row.PhysicalOp),
-        NeutralizeFormula(row.LogicalOp),
-        NeutralizeFormula(row.ObjectName),
-        FormatDecimal(row.CostRatio),
-        FormatNullableDecimal(row.EstimatedSubtreeCost),
-        FormatNullableDecimal(row.EstimatedCpuCost),
-        FormatNullableDecimal(row.EstimatedIoCost),
-        FormatNullableDouble(row.EstimatedRows),
-        FormatNullableDouble(row.AverageRowSize),
-        FormatNullableDouble(row.ActualRows),
-        FormatNullableDouble(row.ActualExecutions),
-        FormatNullableDouble(row.ActualLogicalReads),
-        FormatNullableDouble(row.ActualPhysicalReads),
-        FormatNullableDouble(row.ActualCpuMs),
-        FormatNullableDouble(row.ActualElapsedMs),
-        FormatInt(row.WarningCount),
-        row.IsParallel ? "true" : "false",
-        NeutralizeFormula(row.Summary)
-    ];
 
     private static readonly char[] FormulaTriggerCharacters = ['=', '+', '-', '@', '\t', '\r'];
 
@@ -124,16 +81,4 @@ public static class PlanTableCsvExporter
 
         return string.Concat("\"", value.Replace("\"", "\"\"", StringComparison.Ordinal), "\"");
     }
-
-    private static string FormatInt(int value) =>
-        value.ToString(CultureInfo.InvariantCulture);
-
-    private static string FormatDecimal(decimal value) =>
-        value.ToString(CultureInfo.InvariantCulture);
-
-    private static string FormatNullableDecimal(decimal? value) =>
-        value?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
-
-    private static string FormatNullableDouble(double? value) =>
-        value?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 }

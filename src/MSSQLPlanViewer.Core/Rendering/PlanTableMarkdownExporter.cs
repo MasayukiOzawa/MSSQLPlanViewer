@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 
 namespace MSSQLPlanViewer.Core.Rendering;
@@ -8,71 +7,28 @@ namespace MSSQLPlanViewer.Core.Rendering;
 /// </summary>
 public static class PlanTableMarkdownExporter
 {
-    private static readonly string[] HeaderColumns =
-    [
-        "NodeId",
-        "ParentNodeId",
-        "Depth",
-        "PhysicalOp",
-        "LogicalOp",
-        "ObjectName",
-        "CostRatio",
-        "EstimatedSubtreeCost",
-        "EstimatedCpuCost",
-        "EstimatedIoCost",
-        "EstimatedRows",
-        "AverageRowSize",
-        "ActualRows",
-        "ActualExecutions",
-        "ActualLogicalReads",
-        "ActualPhysicalReads",
-        "ActualCpuMs",
-        "ActualElapsedMs",
-        "WarningCount",
-        "IsParallel",
-        "Summary"
-    ];
-
     public static string ToMarkdown(IReadOnlyList<PlanTableRow> rows)
     {
         ArgumentNullException.ThrowIfNull(rows);
 
+        var columns = PlanTableColumns.All;
         var builder = new StringBuilder();
-        AppendRecord(builder, HeaderColumns);
-        AppendSeparator(builder, HeaderColumns.Length);
+        AppendRecord(builder, PlanTableColumns.Headers);
+        AppendSeparator(builder, columns.Count);
 
+        var fields = new string[columns.Count];
         foreach (var row in rows)
         {
-            AppendRecord(builder, BuildFields(row));
+            for (var index = 0; index < columns.Count; index++)
+            {
+                fields[index] = columns[index].GetValue(row);
+            }
+
+            AppendRecord(builder, fields);
         }
 
         return builder.ToString();
     }
-
-    private static string[] BuildFields(PlanTableRow row) =>
-    [
-        row.NodeId,
-        row.ParentNodeId ?? string.Empty,
-        FormatInt(row.Depth),
-        row.PhysicalOp,
-        row.LogicalOp,
-        row.ObjectName,
-        FormatDecimal(row.CostRatio),
-        FormatNullableDecimal(row.EstimatedSubtreeCost),
-        FormatNullableDecimal(row.EstimatedCpuCost),
-        FormatNullableDecimal(row.EstimatedIoCost),
-        FormatNullableDouble(row.EstimatedRows),
-        FormatNullableDouble(row.AverageRowSize),
-        FormatNullableDouble(row.ActualRows),
-        FormatNullableDouble(row.ActualExecutions),
-        FormatNullableDouble(row.ActualLogicalReads),
-        FormatNullableDouble(row.ActualPhysicalReads),
-        FormatNullableDouble(row.ActualCpuMs),
-        FormatNullableDouble(row.ActualElapsedMs),
-        FormatInt(row.WarningCount),
-        row.IsParallel ? "true" : "false",
-        row.Summary
-    ];
 
     private static void AppendRecord(StringBuilder builder, IReadOnlyList<string> fields)
     {
@@ -119,16 +75,4 @@ public static class PlanTableMarkdownExporter
             .Replace("\n", "<br>", StringComparison.Ordinal)
             .Replace("\r", "<br>", StringComparison.Ordinal);
     }
-
-    private static string FormatInt(int value) =>
-        value.ToString(CultureInfo.InvariantCulture);
-
-    private static string FormatDecimal(decimal value) =>
-        value.ToString(CultureInfo.InvariantCulture);
-
-    private static string FormatNullableDecimal(decimal? value) =>
-        value?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
-
-    private static string FormatNullableDouble(double? value) =>
-        value?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 }
