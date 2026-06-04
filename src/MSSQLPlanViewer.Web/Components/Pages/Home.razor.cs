@@ -195,15 +195,10 @@ public partial class Home
     }
 
     private static string BuildOptimizerStatsUsageTableName(OptimizerStatsUsageEntry item)
-    {
-        var parts = new[] { item.Database, item.Schema, item.Table }
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToArray();
+        => PlanDisplayFormatter.FormatQualifiedTableName(item.Database, item.Schema, item.Table);
 
-        return parts.Length > 0
-            ? string.Join(".", parts)
-            : string.Empty;
-    }
+    private static string BuildAccessedObjectName(AccessedObjectEntry item) =>
+        PlanDisplayFormatter.FormatQualifiedTableName(item.Database, item.Schema, item.Table);
 
     private static string BuildWarningDisplayText(PlanWarning warning)
     {

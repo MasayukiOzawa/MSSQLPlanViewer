@@ -15,4 +15,5 @@ public sealed record StatementPlanSummary(
     IReadOnlyList<PlanProperty> OptimizerHardwareDependentProperties,
     IReadOnlyList<OptimizerStatsUsageEntry> OptimizerStatsUsageEntries,
     IReadOnlyList<MissingIndexEntry> MissingIndexesEntries,
-    IReadOnlyList<WaitStatEntry> WaitStatsEntries);
+    IReadOnlyList<WaitStatEntry> WaitStatsEntries,
+    IReadOnlyList<AccessedObjectEntry> AccessedObjectEntries);

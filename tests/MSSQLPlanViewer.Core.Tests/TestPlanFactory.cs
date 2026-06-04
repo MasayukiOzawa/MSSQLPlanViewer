@@ -28,7 +28,8 @@ internal static class TestPlanFactory
             OptimizerHardwareDependentProperties: Array.Empty<PlanProperty>(),
             OptimizerStatsUsageEntries: Array.Empty<OptimizerStatsUsageEntry>(),
             MissingIndexesEntries: Array.Empty<MissingIndexEntry>(),
-            WaitStatsEntries: Array.Empty<WaitStatEntry>());
+            WaitStatsEntries: Array.Empty<WaitStatEntry>(),
+            AccessedObjectEntries: Array.Empty<AccessedObjectEntry>());
 
     public static PlanNode Node(
         string nodeId,

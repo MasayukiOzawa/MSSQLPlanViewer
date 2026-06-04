@@ -40,6 +40,30 @@ public sealed class ShowplanParserTests
     }
 
     [Fact]
+    public void Parse_CollectsDistinctAccessedObjectsIntoStatementSummary()
+    {
+        var xml = SamplePlanLoader.Load("nested-loops-2022.sqlplan");
+
+        var document = parser.Parse(xml);
+
+        var accessedObjects = document.Statements[0].Summary.AccessedObjectEntries;
+        Assert.Collection(
+            accessedObjects,
+            item =>
+            {
+                Assert.Equal("AdventureWorks", item.Database);
+                Assert.Equal("Sales", item.Schema);
+                Assert.Equal("SalesOrderDetail", item.Table);
+            },
+            item =>
+            {
+                Assert.Equal("AdventureWorks", item.Database);
+                Assert.Equal("Sales", item.Schema);
+                Assert.Equal("SalesOrderHeader", item.Table);
+            });
+    }
+
+    [Fact]
     public void Parse_ThrowsHelpfulMessageForInvalidXml()
     {
         var exception = Assert.Throws<ShowplanParseException>(() => parser.Parse("<not-xml"));

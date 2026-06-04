@@ -1,4 +1,5 @@
 using MSSQLPlanViewer.Web.Components;
+using MSSQLPlanViewer.Web;
 using MSSQLPlanViewer.Core.Parsing;
 using MSSQLPlanViewer.Core.Rendering;
 using MSSQLPlanViewer.Core.Comparison;
@@ -14,6 +15,8 @@ builder.Services.AddRazorComponents()
     });
 builder.Services.AddScoped<IShowplanParser, ShowplanParser>();
 builder.Services.AddScoped<IPlanGraphLayoutService, PlanGraphLayoutService>();
+builder.Services.AddScoped<IPlanGraphSvgRenderer, PlanGraphSvgRenderer>();
+builder.Services.AddScoped<IPlanGraphPngExporter, PlanGraphPngExporter>();
 builder.Services.AddScoped<IPlanTableProjector, PlanTableProjector>();
 builder.Services.AddScoped<IPlanComparisonService, PlanComparisonService>();
 
@@ -32,7 +35,12 @@ app.UseHttpsRedirection();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
+app.MapPlanExportEndpoints();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
+
+public partial class Program
+{
+}

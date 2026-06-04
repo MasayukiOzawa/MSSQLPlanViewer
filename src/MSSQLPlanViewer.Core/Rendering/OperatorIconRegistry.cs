@@ -1,6 +1,6 @@
-namespace MSSQLPlanViewer.Web.Components.Plan;
+namespace MSSQLPlanViewer.Core.Rendering;
 
-internal static class OperatorIconRegistry
+public static class OperatorIconRegistry
 {
     public static OperatorIconDescriptor Resolve(string physicalOp, string logicalOp)
     {
@@ -75,9 +75,9 @@ internal static class OperatorIconRegistry
     }
 }
 
-internal sealed record OperatorIconDescriptor(OperatorIconKind Kind, string AccentColor);
+public sealed record OperatorIconDescriptor(OperatorIconKind Kind, string AccentColor);
 
-internal enum OperatorIconKind
+public enum OperatorIconKind
 {
     Generic = 0,
     Seek,

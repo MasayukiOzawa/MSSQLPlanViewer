@@ -102,6 +102,18 @@ public sealed class PlanDisplayFormatterTests
     }
 
     [Fact]
+    public void FormatQualifiedTableName_JoinsDatabaseSchemaTableWithoutBrackets() =>
+        Assert.Equal(
+            "AdventureWorks.Sales.SalesOrderHeader",
+            PlanDisplayFormatter.FormatQualifiedTableName("AdventureWorks", "Sales", "SalesOrderHeader"));
+
+    [Fact]
+    public void FormatQualifiedTableName_OmitsMissingLeadingParts() =>
+        Assert.Equal(
+            "SalesOrderDetail",
+            PlanDisplayFormatter.FormatQualifiedTableName(null, null, "SalesOrderDetail"));
+
+    [Fact]
     public void FormatWarningSummary_ReturnsNoneWhenEmpty() =>
         Assert.Equal("None", PlanDisplayFormatter.FormatWarningSummary(Array.Empty<PlanWarning>()));
 

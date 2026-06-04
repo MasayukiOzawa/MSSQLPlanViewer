@@ -1,44 +1,124 @@
 # MSSQL Plan Viewer
 
-SQL Server の Showplan XML を解析し、**グラフィカル実行プラン** と **テーブル表示** を同時に確認できる Blazor Web アプリです。
+MSSQL Plan Viewer is a Blazor web application that parses SQL Server **Showplan XML** and presents it as a **Graphical plan / Table view / Operator details / Plan details / Compare plans** experience.
 
-## 現在のスコープ
+## Features
 
-- XML は**ファイルアップロードなし**で、テキスト領域へ貼り付けて解析
-- **単一の Showplan XML** を対象に表示
-- Showplan の XML 名前空間差異を吸収して解析
-- 演算子グラフは **inline SVG** で描画
-- Graphical plan には **ズームボタン / Reset** と **演算子アイコン** を表示
-- Graphical plan は **上から下** へ流れるレイアウトで、**ドラッグスクロール** に対応
-- 演算子一覧は **階層化テーブル** として表示し、親子関係を維持
-- 大きい XML 貼り付けに備えて、Blazor Server の受信メッセージ上限を拡張
+- Paste **Showplan XML** or load **`.sqlplan` / `.xml`** files via drag-and-drop or file picker
+- Load multiple plans, switch between **tabs**, and use **Compare plans**
+- **Graphical plan**
+  - Inline SVG rendering
+  - Operator icons
+  - Zoom, reset, and drag-to-scroll
+  - **Dashed outline** highlight for operators above a cost threshold
+  - Estimated-cost-based **critical path**
+- **Table view**
+  - Hierarchical operator list
+  - **CSV / Markdown** download
+- **Operator details / Plan details**
+  - Warning details
+  - Query Time Stats
+  - Query Plan
+  - MemoryGrantInfo
+  - OptimizerHardwareDependentProperties
+  - OptimizerStatsUsage
+  - MissingIndexes
+  - WaitStats
+- Graphical plan node selection is synchronized with Table view and Operator details
+- **Export API**
+  - `POST /api/exports/table?format=csv`
+  - `POST /api/exports/table?format=md`
+  - `POST /api/exports/graph?format=svg`
+  - `POST /api/exports/graph?format=png`
 
-## プロジェクト構成
+## Project structure
 
-- `src\MSSQLPlanViewer.Web` - Blazor Web App (`net10.0`)
-- `src\MSSQLPlanViewer.Core` - Showplan モデル / パーサー / 表示変換 (`net8.0`)
-- `tests\MSSQLPlanViewer.Core.Tests` - パーサーと表示変換のテスト (`net10.0`)
+| Path | Description |
+| --- | --- |
+| `src\MSSQLPlanViewer.Web` | Blazor Web App (`net10.0`) |
+| `src\MSSQLPlanViewer.Core` | Showplan parser, models, projection, and rendering (`net10.0`) |
+| `tests\MSSQLPlanViewer.Core.Tests` | Parser, rendering, export, and API integration tests (`net10.0`) |
+| `scripts\Test-PlanExportApi.ps1` | PowerShell script for export API smoke testing |
 
-## ローカル実行
+## Run locally
 
 ```powershell
 dotnet run --project .\src\MSSQLPlanViewer.Web\MSSQLPlanViewer.Web.csproj
 ```
 
-起動後、表示されたページのテキスト領域へ Showplan XML を貼り付けて解析します。
+The default launch profile starts the app at `http://localhost:5293`.
 
-## テスト
+## Test
 
 ```powershell
 dotnet test .\MSSQLPlanViewer.sln
 ```
 
-## 実装メモ
+See `docs\TEST_REPORT.md` for the test report.
 
-- パーサーは `XDocument` と `LocalName` ベースで実装し、Showplan スキーマ URI の違いを吸収しています。
-- グラフ/テーブルはどちらも `MSSQLPlanViewer.Core` の変換サービスで生成し、UI から分離しています。
-- 初版は SSMS 完全互換ではなく、主要演算子・コスト・警告・実行時情報の可視化を優先しています。
-- 大きい実行プラン XML の貼り付けで回線断のように見える再接続ループが起きないよう、SignalR の `MaximumReceiveMessageSize` を `10 MB` に設定しています。
-- Graphical plan は inline SVG でズーム可能で、主要演算子は SSMS を意識したアイコン付きノードとして描画します。
-- Graphical plan は上から下へ読み進めやすいレイアウトとし、先頭ノードは左上から表示されます。ズーム後はドラッグで表示領域を移動でき、Reset で倍率と表示位置を初期化できます。
-- Table view は DFS ベースの親子順で投影し、フィルタ時も親ノードを残して階層コンテキストを維持します。
+## Export API
+
+### Table export
+
+- `POST /api/exports/table?format=csv`
+- `POST /api/exports/table?format=md`
+
+Request body:
+
+```json
+{
+  "showplanXml": "<ShowPlanXML ...>...</ShowPlanXML>",
+  "statementId": "1"
+}
+```
+
+### Graph export
+
+- `POST /api/exports/graph?format=svg`
+- `POST /api/exports/graph?format=png`
+
+Request body:
+
+```json
+{
+  "showplanXml": "<ShowPlanXML ...>...</ShowPlanXML>",
+  "statementId": "1",
+  "costHighlightThresholdPercent": 20,
+  "showCriticalPath": true
+}
+```
+
+The response is returned as a downloadable file. If `statementId` is omitted, the first statement is used. The `format` query parameter is required. Invalid or unsupported `format` values return `400`. Invalid XML returns `400`, and a missing statement returns `404`.
+
+## Verify the API with PowerShell
+
+`scripts\Test-PlanExportApi.ps1` calls all four endpoints and saves the returned files.
+
+```powershell
+pwsh -File .\scripts\Test-PlanExportApi.ps1
+```
+
+Or:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-PlanExportApi.ps1
+```
+
+Main parameters:
+
+- `-BaseUrl`
+- `-ShowplanPath`
+- `-ShowplanXml`
+- `-OutputDirectory`
+- `-StatementId`
+- `-CostHighlightThresholdPercent`
+- `-ShowCriticalPath`
+
+If `-ShowplanXml` is provided, the script uses that string directly. Otherwise it uses `-ShowplanPath`. If neither is provided, it falls back to `tests\MSSQLPlanViewer.Core.Tests\Samples\nested-loops-2022.sqlplan`.
+
+## Implementation notes
+
+- `ShowplanParser` uses `XDocument` and `LocalName` so it can handle XML namespace differences.
+- Graph, table, and export logic live in `MSSQLPlanViewer.Core` to keep UI dependencies minimal.
+- Blazor Server receive message size is increased to `10 MB`.
+- Graph export uses a shared server-side SVG renderer, and PNG export rasterizes that SVG output.

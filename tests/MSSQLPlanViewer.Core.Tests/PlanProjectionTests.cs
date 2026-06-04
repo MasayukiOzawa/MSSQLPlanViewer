@@ -75,7 +75,7 @@ public sealed class PlanProjectionTests
     [Fact]
     public void GraphLayout_ReusesHorizontalSpaceForSideBranchesAtDifferentDepths()
     {
-        var summary = new StatementPlanSummary(100m, 1, null, null, null, null, null, null, Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<OptimizerStatsUsageEntry>(), Array.Empty<MissingIndexEntry>(), Array.Empty<WaitStatEntry>());
+        var summary = new StatementPlanSummary(100m, 1, null, null, null, null, null, null, Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<OptimizerStatsUsageEntry>(), Array.Empty<MissingIndexEntry>(), Array.Empty<WaitStatEntry>(), Array.Empty<AccessedObjectEntry>());
         var nodes = new[]
         {
             CreateNode("0", 100m),
@@ -117,7 +117,7 @@ public sealed class PlanProjectionTests
     [Fact]
     public void TableProjection_AddsStatementWarningsToFirstRow()
     {
-        var summary = new StatementPlanSummary(10m, 1, null, null, null, null, null, null, Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<OptimizerStatsUsageEntry>(), Array.Empty<MissingIndexEntry>(), Array.Empty<WaitStatEntry>());
+        var summary = new StatementPlanSummary(10m, 1, null, null, null, null, null, null, Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<OptimizerStatsUsageEntry>(), Array.Empty<MissingIndexEntry>(), Array.Empty<WaitStatEntry>(), Array.Empty<AccessedObjectEntry>());
         var warnings = new[] { new PlanWarning("PlanAffectingConvert", "true", null) };
         var statement = new StatementPlan(
             StatementId: "1",

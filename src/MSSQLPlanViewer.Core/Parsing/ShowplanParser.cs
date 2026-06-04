@@ -135,7 +135,7 @@ public sealed class ShowplanParser : IShowplanParser
                     StatementId: GetAttribute(statementElement, "StatementId") ?? statements.Count.ToString(CultureInfo.InvariantCulture),
                     StatementType: statementElement.Name.LocalName,
                     StatementText: GetAttribute(statementElement, "StatementText") ?? "(statement text unavailable)",
-                    Summary: ParseStatementSummary(statementElement, queryPlan),
+                    Summary: ParseStatementSummary(statementElement, queryPlan, BuildAccessedObjectEntries(rootRelOps)),
                     Nodes: nodes,
                     Edges: edges,
                     Warnings: ParseStatementWarnings(statementElement, queryPlan),
@@ -195,7 +195,10 @@ public sealed class ShowplanParser : IShowplanParser
         }
     }
 
-    private static StatementPlanSummary ParseStatementSummary(XElement statementElement, XElement queryPlanElement) =>
+    private static StatementPlanSummary ParseStatementSummary(
+        XElement statementElement,
+        XElement queryPlanElement,
+        IReadOnlyList<AccessedObjectEntry> accessedObjectEntries) =>
         new(
             EstimatedSubtreeCost: GetDecimalAttribute(statementElement, "StatementSubTreeCost"),
             EstimatedRows: GetDoubleAttribute(statementElement, "StatementEstRows"),
@@ -211,11 +214,26 @@ public sealed class ShowplanParser : IShowplanParser
             OptimizerHardwareDependentProperties: BuildAttributeProperties(queryPlanElement.Elements().FirstOrDefault(element => HasLocalName(element, "OptimizerHardwareDependentProperties"))),
             OptimizerStatsUsageEntries: BuildOptimizerStatsUsageEntries(statementElement, queryPlanElement),
             MissingIndexesEntries: BuildMissingIndexesEntries(queryPlanElement),
-            WaitStatsEntries: BuildWaitStatsEntries(queryPlanElement));
+            WaitStatsEntries: BuildWaitStatsEntries(queryPlanElement),
+            AccessedObjectEntries: accessedObjectEntries);
 
     private static IReadOnlyList<PlanWarning> ParseStatementWarnings(XElement statementElement, XElement queryPlanElement) =>
         ParseWarnings(statementElement)
             .Concat(ParseWarnings(queryPlanElement))
+            .ToArray();
+
+    private static IReadOnlyList<AccessedObjectEntry> BuildAccessedObjectEntries(IEnumerable<XElement> rootRelOps) =>
+        rootRelOps
+            .SelectMany(rootRelOp => rootRelOp.DescendantsAndSelf().Where(element => HasLocalName(element, "Object")))
+            .Select(objectElement => new AccessedObjectEntry(
+                Database: GetAttribute(objectElement, "Database"),
+                Schema: GetAttribute(objectElement, "Schema"),
+                Table: GetAttribute(objectElement, "Table") ?? string.Empty))
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Table))
+            .Distinct()
+            .OrderBy(entry => entry.Database ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(entry => entry.Schema ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(entry => entry.Table, StringComparer.Ordinal)
             .ToArray();
 
     private static PlanObjectReference? ParseObjectReference(XElement relOpElement)

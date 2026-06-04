@@ -65,6 +65,15 @@ public static class PlanDisplayFormatter
         return objectName;
     }
 
+    public static string FormatQualifiedTableName(string? database, string? schema, string? table)
+    {
+        var parts = new[] { database, schema, table }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+
+        return parts.Length == 0 ? "n/a" : string.Join(".", parts);
+    }
+
     public static string FormatWarningSummary(IEnumerable<PlanWarning> warnings)
     {
         var names = warnings
