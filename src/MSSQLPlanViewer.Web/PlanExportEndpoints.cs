@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using MSSQLPlanViewer.Core.Models;
+using MSSQLPlanViewer.Core.Formatting;
 using MSSQLPlanViewer.Core.Parsing;
 using MSSQLPlanViewer.Core.Rendering;
 
@@ -53,11 +54,11 @@ internal static class PlanExportEndpoints
             "csv" => CreateTextFileResult(
                 PlanTableCsvExporter.ToCsv(rows),
                 "text/csv",
-                BuildDownloadFileName("table", resolved.Statement.StatementId, "csv")),
+                PlanFileNameBuilder.BuildFileName("plan-table", resolved.Statement.StatementId, "csv", "plan-table")),
             "md" => CreateTextFileResult(
                 PlanTableMarkdownExporter.ToMarkdown(rows),
                 "text/markdown",
-                BuildDownloadFileName("table", resolved.Statement.StatementId, "md")),
+                PlanFileNameBuilder.BuildFileName("plan-table", resolved.Statement.StatementId, "md", "plan-table")),
             _ => throw new InvalidOperationException($"Unsupported table export format '{resolvedFormat}'.")
         };
     }
@@ -90,11 +91,11 @@ internal static class PlanExportEndpoints
             "svg" => CreateTextFileResult(
                 svg,
                 "image/svg+xml",
-                BuildDownloadFileName("graph", resolved.Statement.StatementId, "svg")),
+                PlanFileNameBuilder.BuildFileName("plan-graph", resolved.Statement.StatementId, "svg", "plan-graph")),
             "png" => Results.File(
                 pngExporter.Export(svg, (int)Math.Ceiling(layout.Width), (int)Math.Ceiling(layout.Height)),
                 "image/png",
-                BuildDownloadFileName("graph", resolved.Statement.StatementId, "png")),
+                PlanFileNameBuilder.BuildFileName("plan-graph", resolved.Statement.StatementId, "png", "plan-graph")),
             _ => throw new InvalidOperationException($"Unsupported graph export format '{resolvedFormat}'.")
         };
     }
@@ -217,17 +218,6 @@ internal static class PlanExportEndpoints
 
         resolvedFormat = candidateFormat;
         return true;
-    }
-
-    private static string BuildDownloadFileName(string kind, string? statementId, string extension)
-    {
-        var raw = string.IsNullOrWhiteSpace(statementId)
-            ? $"plan-{kind}"
-            : $"plan-{kind}-stmt{statementId}";
-        var safe = new string(raw.Select(character => char.IsLetterOrDigit(character) ? character : '-').ToArray())
-            .Trim('-');
-        var baseName = string.IsNullOrWhiteSpace(safe) ? $"plan-{kind}" : safe;
-        return $"{baseName}.{extension}";
     }
 
     private sealed record ResolvedStatement(ShowplanDocument Document, StatementPlan Statement);

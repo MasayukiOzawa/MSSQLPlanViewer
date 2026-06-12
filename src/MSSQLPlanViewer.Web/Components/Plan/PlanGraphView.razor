@@ -324,11 +324,7 @@ else
                 return ExportBaseName;
             }
 
-            var statementId = Layout?.StatementId;
-            var raw = string.IsNullOrWhiteSpace(statementId) ? "plan-graph" : $"plan-graph-stmt{statementId}";
-            var safe = new string(raw.Select(character => char.IsLetterOrDigit(character) ? character : '-').ToArray())
-                .Trim('-');
-            return string.IsNullOrEmpty(safe) ? "plan-graph" : safe;
+            return PlanFileNameBuilder.BuildBaseName("plan-graph", Layout?.StatementId, "plan-graph");
         }
     }
 

@@ -449,12 +449,7 @@ public partial class Home
     private string BuildExportBaseName()
     {
         var label = ActivePlan?.Label ?? "plan";
-        var statementId = SelectedStatement?.StatementId;
-        var raw = string.IsNullOrWhiteSpace(statementId) ? label : $"{label}-stmt{statementId}";
-        var safe = new string(raw.Select(character => char.IsLetterOrDigit(character) ? character : '-').ToArray())
-            .Trim('-');
-
-        return string.IsNullOrEmpty(safe) ? "plan" : safe;
+        return PlanFileNameBuilder.BuildBaseName(label, SelectedStatement?.StatementId, "plan");
     }
 
     private string BuildExportFileName(string extension) => $"{BuildExportBaseName()}.{extension}";
