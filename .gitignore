@@ -2,6 +2,7 @@ bin/
 obj/
 .vs/
 TestResults/
+.playwright-mcp/
 *.user
 *.suo
 *.cache
