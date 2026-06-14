@@ -270,7 +270,36 @@ public sealed class ShowplanParser : IShowplanParser
             ActualCpuMs: SumAttributes(counters, "ActualCPUms", "ActualCpuMs"),
             ActualElapsedMs: SumAttributes(counters, "ActualElapsedms", "ActualElapsedMs"),
             ActualRebinds: SumAttributes(counters, "ActualRebinds"),
-            ActualRewinds: SumAttributes(counters, "ActualRewinds"));
+            ActualRewinds: SumAttributes(counters, "ActualRewinds"))
+        {
+            Threads = counters
+                .Select(BuildThreadRuntimeMetrics)
+                .Where(metric => metric is not null)
+                .Cast<PlanThreadRuntimeMetrics>()
+                .OrderBy(metric => metric.ThreadId)
+                .ToArray()
+        };
+    }
+
+    private static PlanThreadRuntimeMetrics? BuildThreadRuntimeMetrics(XElement counterElement)
+    {
+        var threadId = GetIntAttribute(counterElement, "Thread");
+        if (!threadId.HasValue)
+        {
+            return null;
+        }
+
+        return new PlanThreadRuntimeMetrics(
+            ThreadId: threadId.Value,
+            ActualRows: GetFirstDoubleAttribute(counterElement, "ActualRows"),
+            ActualRowsRead: GetFirstDoubleAttribute(counterElement, "ActualRowsRead"),
+            ActualExecutions: GetFirstDoubleAttribute(counterElement, "ActualExecutions"),
+            ActualLogicalReads: GetFirstDoubleAttribute(counterElement, "ActualLogicalReads"),
+            ActualPhysicalReads: GetFirstDoubleAttribute(counterElement, "ActualPhysicalReads"),
+            ActualCpuMs: GetFirstDoubleAttribute(counterElement, "ActualCPUms", "ActualCpuMs"),
+            ActualElapsedMs: GetFirstDoubleAttribute(counterElement, "ActualElapsedms", "ActualElapsedMs"),
+            ActualRebinds: GetFirstDoubleAttribute(counterElement, "ActualRebinds"),
+            ActualRewinds: GetFirstDoubleAttribute(counterElement, "ActualRewinds"));
     }
 
     private static IReadOnlyList<PlanWarning> ParseWarnings(XElement ownerElement)
@@ -1009,6 +1038,19 @@ public sealed class ShowplanParser : IShowplanParser
         int.TryParse(GetAttribute(element, name), NumberStyles.Any, CultureInfo.InvariantCulture, out var value)
             ? value
             : null;
+
+    private static double? GetFirstDoubleAttribute(XElement element, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (double.TryParse(GetAttribute(element, name), NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
 
     private static double? SumAttributes(IEnumerable<XElement> elements, params string[] names)
     {

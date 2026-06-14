@@ -64,6 +64,39 @@ public sealed class ShowplanParserTests
     }
 
     [Fact]
+    public void Parse_ReadsPerThreadRuntimeCountersAndKeepsAggregateTotals()
+    {
+        var xml = SamplePlanLoader.Load("parallel-skew-2022.sqlplan");
+
+        var document = parser.Parse(xml);
+        var scan = document.Statements[0].Nodes.Single(node => node.NodeId == "1");
+
+        Assert.Equal(100000, scan.RuntimeMetrics.ActualRows);
+        Assert.Equal(4, scan.RuntimeMetrics.ActualExecutions);
+        Assert.Equal(1000, scan.RuntimeMetrics.ActualLogicalReads);
+        Assert.Equal(150, scan.RuntimeMetrics.ActualCpuMs);
+        Assert.Equal(210, scan.RuntimeMetrics.ActualElapsedMs);
+        Assert.Equal(5, scan.RuntimeMetrics.Threads.Count);
+        Assert.Collection(
+            scan.RuntimeMetrics.Threads,
+            thread =>
+            {
+                Assert.Equal(0, thread.ThreadId);
+                Assert.Equal(0, thread.ActualRows);
+                Assert.Equal(0, thread.ActualRowsRead);
+            },
+            thread =>
+            {
+                Assert.Equal(1, thread.ThreadId);
+                Assert.Equal(90000, thread.ActualRows);
+                Assert.Equal(90000, thread.ActualRowsRead);
+            },
+            thread => Assert.Equal(2, thread.ThreadId),
+            thread => Assert.Equal(3, thread.ThreadId),
+            thread => Assert.Equal(4, thread.ThreadId));
+    }
+
+    [Fact]
     public void Parse_ThrowsHelpfulMessageForInvalidXml()
     {
         var exception = Assert.Throws<ShowplanParseException>(() => parser.Parse("<not-xml"));

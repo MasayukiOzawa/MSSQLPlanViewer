@@ -74,6 +74,51 @@ else
             </div>
         }
 
+        @if (Node.RuntimeMetrics.Threads.Count > 1)
+        {
+            var threadStatistics = ThreadDistributionStatistics.Compute(Node.RuntimeMetrics.Threads);
+            <div class="thread-counters-section">
+                <div class="details-label">Per-thread counters</div>
+                @if (threadStatistics is not null)
+                {
+                    <div class="thread-skew-summary">
+                        <span>@threadStatistics.WorkerThreadCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) workers</span>
+                        <span>Max/avg @FormatNumber(threadStatistics.MaxToAverageRatio)</span>
+                        <span>CV @FormatNumber(threadStatistics.CoefficientOfVariation)</span>
+                    </div>
+                }
+                <div class="details-table-shell">
+                    <table class="table table-sm align-middle details-table thread-counters-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Thread</th>
+                                <th scope="col" class="numeric-cell">Actual rows</th>
+                                <th scope="col" class="numeric-cell">Rows read</th>
+                                <th scope="col" class="numeric-cell">Executions</th>
+                                <th scope="col" class="numeric-cell">Logical reads</th>
+                                <th scope="col" class="numeric-cell">CPU ms</th>
+                                <th scope="col" class="numeric-cell">Elapsed ms</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var thread in Node.RuntimeMetrics.Threads)
+                            {
+                                <tr>
+                                    <td>@FormatThreadId(thread.ThreadId)</td>
+                                    <td class="numeric-cell">@FormatNumber(thread.ActualRows)</td>
+                                    <td class="numeric-cell">@FormatNumber(thread.ActualRowsRead)</td>
+                                    <td class="numeric-cell">@FormatNumber(thread.ActualExecutions)</td>
+                                    <td class="numeric-cell">@FormatNumber(thread.ActualLogicalReads)</td>
+                                    <td class="numeric-cell">@FormatNumber(thread.ActualCpuMs)</td>
+                                    <td class="numeric-cell">@FormatNumber(thread.ActualElapsedMs)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
         @if (Node.Warnings.Count > 0)
         {
             <div class="warning-section">
@@ -108,4 +153,12 @@ else
 
     [Parameter]
     public PlanNode? Node { get; set; }
+
+    private static string FormatThreadId(int threadId) =>
+        threadId == 0
+            ? "0 (coordinator)"
+            : threadId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string FormatNumber(double? value) =>
+        PlanDisplayFormatter.FormatNumber(value);
 }

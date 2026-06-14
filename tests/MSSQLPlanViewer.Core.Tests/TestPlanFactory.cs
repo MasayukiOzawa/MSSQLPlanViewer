@@ -38,6 +38,10 @@ internal static class TestPlanFactory
         string logicalOp = "Index Seek",
         bool isParallel = false,
         PlanObjectReference? objectReference = null,
+        PlanRuntimeMetrics? runtimeMetrics = null,
+        double? estimatedRows = null,
+        IReadOnlyList<PlanProperty>? properties = null,
+        IReadOnlyList<PlanProperty>? xmlAttributes = null,
         params PlanWarning[] warnings) =>
         new(
             NodeId: nodeId,
@@ -46,14 +50,14 @@ internal static class TestPlanFactory
             EstimatedSubtreeCost: subtreeCost,
             EstimatedCpuCost: null,
             EstimatedIoCost: null,
-            EstimatedRows: null,
+            EstimatedRows: estimatedRows,
             AverageRowSize: null,
             IsParallel: isParallel,
             ObjectReference: objectReference,
-            RuntimeMetrics: NoMetrics,
+            RuntimeMetrics: runtimeMetrics ?? NoMetrics,
             Warnings: warnings.Length == 0 ? Array.Empty<PlanWarning>() : warnings,
-            Properties: Array.Empty<PlanProperty>(),
-            XmlAttributes: Array.Empty<PlanProperty>());
+            Properties: properties ?? Array.Empty<PlanProperty>(),
+            XmlAttributes: xmlAttributes ?? Array.Empty<PlanProperty>());
 
     public static PlanEdge Edge(string fromNodeId, string toNodeId) =>
         new(fromNodeId, toNodeId);
@@ -66,12 +70,13 @@ internal static class TestPlanFactory
         IReadOnlyList<PlanEdge>? edges = null,
         IReadOnlyList<string>? rootNodeIds = null,
         IReadOnlyList<PlanWarning>? warnings = null,
+        StatementPlanSummary? summary = null,
         string statementId = "1") =>
         new(
             StatementId: statementId,
             StatementType: "SELECT",
             StatementText: "SELECT 1",
-            Summary: EmptySummary,
+            Summary: summary ?? EmptySummary,
             Nodes: nodes,
             Edges: edges ?? Array.Empty<PlanEdge>(),
             Warnings: warnings ?? Array.Empty<PlanWarning>(),

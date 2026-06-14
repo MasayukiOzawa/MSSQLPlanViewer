@@ -4,6 +4,7 @@
 @inject IPlanGraphLayoutService GraphLayoutService
 @inject IPlanTableProjector TableProjector
 @inject IPlanComparisonService PlanComparisonService
+@inject IPlanDiagnosticsService PlanDiagnosticsService
 @inject ILogger<Home> Logger
 
 <PageTitle>MSSQL Plan Viewer</PageTitle>
@@ -31,7 +32,7 @@
 
         <textarea class="plan-input"
                   @bind="XmlInput"
-                  @bind:event="onchange"
+                  @bind:event="oninput"
                   spellcheck="false"
                   placeholder="Paste SQL Server Showplan XML here."></textarea>
 
@@ -167,6 +168,9 @@
         var optimizerHardwareItems = GetVisibleProperties(SelectedStatement.Summary.OptimizerHardwareDependentProperties);
         var missingIndexItems = SelectedStatement.Summary.MissingIndexesEntries;
         var accessedObjectItems = SelectedStatement.Summary.AccessedObjectEntries;
+        var statementDiagnostics = ActivePlan?.Diagnostics
+            .Where(diagnostic => diagnostic.StatementId == SelectedStatement.StatementId)
+            .ToArray() ?? Array.Empty<PlanDiagnostic>();
         var combinedPlanDetailRows = BuildCombinedPlanDetailRows(
             queryTimeStatsItems,
             statementSummaryItems,
@@ -475,6 +479,15 @@
                                    FocusRequestVersion="TableFocusRequestVersion"
                                    OnSelectNode="HandleTableNodeSelected"
                                    OnHoverNode="HandleNodeHovered" />
+                </section>
+
+                <section class="card-surface diagnostics-card">
+                    <div class="section-header compact">
+                        <div>
+                            <span class="summary-label">Diagnostics</span>
+                        </div>
+                    </div>
+                    <PlanDiagnosticsPanel Diagnostics="statementDiagnostics" OnSelectNode="HandleGraphNodeSelected" />
                 </section>
             </div>
             @if (SelectedStatement is not null)

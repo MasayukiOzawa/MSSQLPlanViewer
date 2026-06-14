@@ -1,0 +1,111 @@
+@if (Diagnostics.Count == 0)
+{
+    <p class="diagnostics-empty">No diagnostics for this statement.</p>
+}
+else
+{
+    <div class="diagnostics-shell">
+        <div class="diagnostics-filters" role="toolbar" aria-label="Diagnostic severity filter">
+            <button type="button"
+                    class="diagnostics-filter @(ActiveSeverity is null ? "is-active" : null)"
+                    @onclick="() => SetSeverity(null)">
+                All <span>@Diagnostics.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+            </button>
+            @foreach (var severity in SeverityOrder)
+            {
+                var count = Diagnostics.Count(diagnostic => diagnostic.Severity == severity);
+                <button type="button"
+                        class="diagnostics-filter severity-@severity.ToString().ToLowerInvariant() @(ActiveSeverity == severity ? "is-active" : null)"
+                        @onclick="() => SetSeverity(severity)"
+                        disabled="@(count == 0)">
+                    @severity <span>@count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                </button>
+            }
+        </div>
+
+        <div class="diagnostics-table-shell">
+            <table class="table table-sm align-middle diagnostics-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Severity</th>
+                        <th scope="col">Rule</th>
+                        <th scope="col">Node</th>
+                        <th scope="col">Message</th>
+                        <th scope="col">Recommendation</th>
+                        <th scope="col">Evidence</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var diagnostic in VisibleDiagnostics)
+                    {
+                        <tr class="severity-@diagnostic.Severity.ToString().ToLowerInvariant()">
+                            <td>
+                                <span class="diagnostic-severity">@diagnostic.Severity</span>
+                            </td>
+                            <td class="diagnostic-rule-cell">
+                                <strong>@diagnostic.RuleName</strong>
+                                <span>@diagnostic.RuleId</span>
+                            </td>
+                            <td class="diagnostic-node-cell">
+                                @if (!string.IsNullOrWhiteSpace(diagnostic.NodeId))
+                                {
+                                    <button type="button"
+                                            class="btn btn-outline-secondary btn-sm diagnostic-node-button"
+                                            @onclick="() => SelectNode(diagnostic.NodeId!)">
+                                        Node @diagnostic.NodeId
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="diagnostic-statement-node">Statement</span>
+                                }
+                            </td>
+                            <td class="diagnostic-message-cell">@diagnostic.Message</td>
+                            <td class="diagnostic-recommendation-cell">@diagnostic.Recommendation</td>
+                            <td class="diagnostic-evidence-cell">
+                                @if (diagnostic.Evidence.Count > 0)
+                                {
+                                    <dl class="diagnostic-evidence-list">
+                                        @foreach (var evidence in diagnostic.Evidence)
+                                        {
+                                            <div>
+                                                <dt>@evidence.Name</dt>
+                                                <dd>@evidence.Value</dd>
+                                            </div>
+                                        }
+                                    </dl>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly PlanDiagnosticSeverity[] SeverityOrder =
+    [
+        PlanDiagnosticSeverity.Critical,
+        PlanDiagnosticSeverity.Warning,
+        PlanDiagnosticSeverity.Info
+    ];
+
+    private PlanDiagnosticSeverity? ActiveSeverity { get; set; }
+
+    [Parameter]
+    public IReadOnlyList<PlanDiagnostic> Diagnostics { get; set; } = Array.Empty<PlanDiagnostic>();
+
+    [Parameter]
+    public EventCallback<string> OnSelectNode { get; set; }
+
+    private IReadOnlyList<PlanDiagnostic> VisibleDiagnostics =>
+        ActiveSeverity is null
+            ? Diagnostics
+            : Diagnostics.Where(diagnostic => diagnostic.Severity == ActiveSeverity).ToArray();
+
+    private void SetSeverity(PlanDiagnosticSeverity? severity) => ActiveSeverity = severity;
+
+    private Task SelectNode(string nodeId) => OnSelectNode.InvokeAsync(nodeId);
+}

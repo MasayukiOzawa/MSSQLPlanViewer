@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2022/ShowPlan" Version="1.2" Build="16.0.1000.6">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementId="1" StatementText="SELECT * FROM dbo.Orders WHERE CustomerCode = @p0" StatementSubTreeCost="25.7" StatementEstRows="100">
+          <OptimizerStatsUsage>
+            <StatisticsInfo Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Statistics="[IX_Orders_CustomerCode]" LastUpdate="2026-01-01T00:00:00" StatisticsModificationCount="500000" LastSample="2026-01-01T00:00:00" SamplingPercent="5" Steps="200" Rows="2000000" UnfilteredRows="2000000" PersistedSamplePercent="0" />
+          </OptimizerStatsUsage>
+          <QueryPlan CachedPlanSize="64" CompileTime="14" CompileCPU="9" CompileMemory="512">
+            <Warnings>
+              <PlanAffectingConvert ConvertIssue="Seek Plan" Expression="CONVERT_IMPLICIT(int,[dbo].[Orders].[CustomerCode],0)=[@p0]" />
+              <MemoryGrantWarning GrantWarningKind="Excessive Grant" />
+            </Warnings>
+            <MemoryGrantInfo SerialRequiredMemory="1024" SerialDesiredMemory="2048" RequiredMemory="1024" DesiredMemory="2048" RequestedMemory="102400" GrantWaitTime="0" GrantedMemory="102400" MaxUsedMemory="2048" />
+            <MissingIndexes>
+              <MissingIndexGroup Impact="95">
+                <MissingIndex Database="[SalesDb]" Schema="[dbo]" Table="[Orders]">
+                  <ColumnGroup Usage="EQUALITY">
+                    <Column Name="[CustomerCode]" />
+                  </ColumnGroup>
+                  <ColumnGroup Usage="INEQUALITY">
+                    <Column Name="[OrderDate]" />
+                  </ColumnGroup>
+                  <ColumnGroup Usage="INCLUDE">
+                    <Column Name="[TotalDue]" />
+                    <Column Name="[Status]" />
+                  </ColumnGroup>
+                </MissingIndex>
+              </MissingIndexGroup>
+            </MissingIndexes>
+            <RelOp NodeId="0" PhysicalOp="Nested Loops" LogicalOp="Inner Join" EstimateRows="100" EstimateCPU="0.4" EstimateIO="0.2" AvgRowSize="64" EstimatedTotalSubtreeCost="25.7" Parallel="0">
+              <RunTimeInformation>
+                <RunTimeCountersPerThread Thread="0" ActualRows="50000" ActualExecutions="1" ActualLogicalReads="0" ActualPhysicalReads="0" ActualCPUms="2" ActualElapsedms="50" />
+              </RunTimeInformation>
+              <NestedLoops>
+                <RelOp NodeId="1" PhysicalOp="Index Scan" LogicalOp="Index Scan" EstimateRows="100" EstimateCPU="3.5" EstimateIO="8.2" AvgRowSize="64" EstimatedTotalSubtreeCost="12.2" Parallel="0">
+                  <Warnings>
+                    <SpillToTempDb SpillLevel="2" />
+                  </Warnings>
+                  <OutputList>
+                    <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Column="[OrderId]" />
+                  </OutputList>
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="50000" ActualRowsRead="1000000" ActualExecutions="1" ActualLogicalReads="10000" ActualPhysicalReads="0" ActualCPUms="220" ActualElapsedms="480" />
+                  </RunTimeInformation>
+                  <IndexScan Ordered="false">
+                    <Object Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Index="[IX_Orders_CustomerCode]" IndexKind="NonClustered" />
+                    <Predicate>
+                      <ScalarOperator ScalarString="CONVERT_IMPLICIT(int,[dbo].[Orders].[CustomerCode],0)=[@p0]" />
+                    </Predicate>
+                  </IndexScan>
+                </RelOp>
+                <RelOp NodeId="2" PhysicalOp="Clustered Index Seek" LogicalOp="Clustered Index Seek" EstimateRows="1" EstimateCPU="0.2" EstimateIO="0.1" AvgRowSize="64" EstimatedTotalSubtreeCost="10.1" Parallel="0">
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="50000" ActualExecutions="150000" ActualLogicalReads="450000" ActualPhysicalReads="0" ActualCPUms="300" ActualElapsedms="520" />
+                  </RunTimeInformation>
+                  <IndexScan Lookup="1">
+                    <Object Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Index="[PK_Orders]" IndexKind="Clustered" />
+                  </IndexScan>
+                </RelOp>
+              </NestedLoops>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

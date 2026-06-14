@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2022/ShowPlan" Version="1.2" Build="16.0.1000.6">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementId="1" StatementText="SELECT * FROM dbo.FactSales" StatementSubTreeCost="12.4" StatementEstRows="100000">
+          <QueryPlan CachedPlanSize="48" CompileTime="8" CompileCPU="5" CompileMemory="384">
+            <RelOp NodeId="0" PhysicalOp="Parallelism" LogicalOp="Gather Streams" EstimateRows="100000" EstimateCPU="0.1" EstimateIO="0" AvgRowSize="32" EstimatedTotalSubtreeCost="12.4" Parallel="1">
+              <RunTimeInformation>
+                <RunTimeCountersPerThread Thread="0" ActualRows="100000" ActualExecutions="1" ActualLogicalReads="0" ActualPhysicalReads="0" ActualCPUms="1" ActualElapsedms="10" />
+              </RunTimeInformation>
+              <Parallelism>
+                <RelOp NodeId="1" PhysicalOp="Index Scan" LogicalOp="Index Scan" EstimateRows="100000" EstimateCPU="4" EstimateIO="8" AvgRowSize="32" EstimatedTotalSubtreeCost="12.3" Parallel="1">
+                  <OutputList>
+                    <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[FactSales]" Column="[SaleId]" />
+                  </OutputList>
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="0" ActualRowsRead="0" ActualExecutions="0" ActualLogicalReads="0" ActualPhysicalReads="0" ActualCPUms="0" ActualElapsedms="0" />
+                    <RunTimeCountersPerThread Thread="1" ActualRows="90000" ActualRowsRead="90000" ActualExecutions="1" ActualLogicalReads="900" ActualPhysicalReads="0" ActualCPUms="120" ActualElapsedms="150" />
+                    <RunTimeCountersPerThread Thread="2" ActualRows="3000" ActualRowsRead="3000" ActualExecutions="1" ActualLogicalReads="30" ActualPhysicalReads="0" ActualCPUms="10" ActualElapsedms="20" />
+                    <RunTimeCountersPerThread Thread="3" ActualRows="3500" ActualRowsRead="3500" ActualExecutions="1" ActualLogicalReads="35" ActualPhysicalReads="0" ActualCPUms="10" ActualElapsedms="20" />
+                    <RunTimeCountersPerThread Thread="4" ActualRows="3500" ActualRowsRead="3500" ActualExecutions="1" ActualLogicalReads="35" ActualPhysicalReads="0" ActualCPUms="10" ActualElapsedms="20" />
+                  </RunTimeInformation>
+                  <IndexScan Ordered="false">
+                    <Object Database="[SalesDb]" Schema="[dbo]" Table="[FactSales]" Index="[IX_FactSales_Date]" IndexKind="NonClustered" />
+                  </IndexScan>
+                </RelOp>
+              </Parallelism>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

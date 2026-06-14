@@ -1,4 +1,5 @@
 using MSSQLPlanViewer.Core.Models;
+using MSSQLPlanViewer.Core.Diagnostics;
 using MSSQLPlanViewer.Core.Rendering;
 
 namespace MSSQLPlanViewer.Web.State;
@@ -24,4 +25,6 @@ public sealed class LoadedPlan
     public StatementGraphLayout? SelectedLayout { get; set; }
 
     public IReadOnlyList<PlanTableRow> CurrentRows { get; set; } = Array.Empty<PlanTableRow>();
+
+    public IReadOnlyList<PlanDiagnostic> Diagnostics { get; init; } = Array.Empty<PlanDiagnostic>();
 }

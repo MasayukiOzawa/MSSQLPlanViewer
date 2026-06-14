@@ -321,7 +321,8 @@ public partial class Home
         var plan = new LoadedPlan
         {
             Label = label,
-            Document = document
+            Document = document,
+            Diagnostics = PlanDiagnosticsService.Analyze(document)
         };
 
         Plans.Add(plan);
