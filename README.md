@@ -43,6 +43,8 @@ MSSQL Plan Viewer is a Blazor web application that parses SQL Server **Showplan 
   - Per-thread runtime counters
 - Graphical plan node selection is synchronized with Table view, Diagnostics, and Operator details
 - **Export API**
+  - JSON `POST` API for automation and tool integration
+  - Accepts `showplanXml` in the request body and returns downloadable files
   - `POST /api/exports/table?format=csv`
   - `POST /api/exports/table?format=md`
   - `POST /api/exports/graph?format=svg`
@@ -142,6 +144,132 @@ Request body:
 ```
 
 The response is returned as a downloadable file. If `statementId` is omitted, the first statement is used. The `format` query parameter is required. Invalid or unsupported `format` values return `400`. Invalid XML returns `400`, and a missing statement returns `404`.
+
+### API call specification
+
+The Export API is intended for local automation and integration with tools that already have SQL Server Showplan XML.
+
+| Item | Specification |
+| --- | --- |
+| Base URL | Same as the running web app, for example `http://localhost:5293` |
+| Method | `POST` |
+| Authentication | None by default |
+| Request content type | `application/json` |
+| Antiforgery token | Not required for `/api/exports/*` |
+| Response | A downloadable file returned in the response body |
+
+Supported endpoints:
+
+| Endpoint | Required query | Response content type | Output |
+| --- | --- | --- | --- |
+| `/api/exports/table` | `format=csv` | `text/csv` | CSV table export |
+| `/api/exports/table` | `format=md` or `format=markdown` | `text/markdown` | Markdown table export |
+| `/api/exports/graph` | `format=svg` | `image/svg+xml` | SVG graph export |
+| `/api/exports/graph` | `format=png` | `image/png` | PNG graph export |
+
+Table export request body:
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `showplanXml` | string | Yes | SQL Server Showplan XML content. |
+| `statementId` | string | No | Statement ID to export. If omitted, the first statement is used. |
+
+Graph export request body:
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `showplanXml` | string | Yes | - | SQL Server Showplan XML content. |
+| `statementId` | string | No | First statement | Statement ID to export. |
+| `costHighlightThresholdPercent` | number | No | `20` | Cost percentage threshold used for dashed outline highlighting. |
+| `showCriticalPath` | boolean | No | `true` | Whether to highlight the estimated-cost critical path. |
+
+Error responses use ASP.NET Core problem details JSON.
+
+| Status | When |
+| --- | --- |
+| `400` | `format` is missing or unsupported, `showplanXml` is empty, or the XML cannot be parsed. |
+| `404` | The Showplan XML contains no statements, or the requested `statementId` does not exist. |
+
+### API examples
+
+Start the app first:
+
+```powershell
+dotnet run --project .\src\MSSQLPlanViewer.Web\MSSQLPlanViewer.Web.csproj
+```
+
+The examples below use `tests\MSSQLPlanViewer.Core.Tests\Samples\nested-loops-2022.sqlplan`.
+
+Export the table view as CSV:
+
+```powershell
+$baseUrl = "http://localhost:5293"
+$xml = Get-Content .\tests\MSSQLPlanViewer.Core.Tests\Samples\nested-loops-2022.sqlplan -Raw
+$body = @{
+    showplanXml = $xml
+} | ConvertTo-Json -Depth 5
+
+Invoke-WebRequest `
+    -Uri "$baseUrl/api/exports/table?format=csv" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body $body `
+    -OutFile .\plan-table.csv
+```
+
+Export the table view as Markdown for a specific statement:
+
+```powershell
+$body = @{
+    showplanXml = $xml
+    statementId = "1"
+} | ConvertTo-Json -Depth 5
+
+Invoke-WebRequest `
+    -Uri "$baseUrl/api/exports/table?format=md" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body $body `
+    -OutFile .\plan-table.md
+```
+
+Export the graphical plan as SVG:
+
+```powershell
+$body = @{
+    showplanXml = $xml
+    costHighlightThresholdPercent = 20
+    showCriticalPath = $true
+} | ConvertTo-Json -Depth 5
+
+Invoke-WebRequest `
+    -Uri "$baseUrl/api/exports/graph?format=svg" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body $body `
+    -OutFile .\plan-graph.svg
+```
+
+Export the graphical plan as PNG:
+
+```powershell
+Invoke-WebRequest `
+    -Uri "$baseUrl/api/exports/graph?format=png" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body $body `
+    -OutFile .\plan-graph.png
+```
+
+You can also save the JSON request body and call the API with `curl.exe`:
+
+```powershell
+$body | Set-Content .\graph-request.json -Encoding utf8
+curl.exe -X POST "http://localhost:5293/api/exports/graph?format=svg" `
+    -H "Content-Type: application/json" `
+    --data-binary "@graph-request.json" `
+    -o plan-graph.svg
+```
 
 ## Verify the API with PowerShell
 
