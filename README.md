@@ -67,6 +67,28 @@ dotnet run --project .\src\MSSQLPlanViewer.Web\MSSQLPlanViewer.Web.csproj
 
 The default launch profile starts the app at `http://localhost:5293`.
 
+## Run from a GitHub Release
+
+1. Download `MSSQLPlanViewer-vX.Y.Z-win-x64.zip` from the GitHub Releases page.
+2. Extract the ZIP.
+3. Keep `wwwroot`, `appsettings.json`, and the static web assets file in the same folder as `MSSQLPlanViewer.Web.exe`.
+4. Start the app:
+
+```powershell
+.\MSSQLPlanViewer.Web.exe --urls http://localhost:5293
+```
+
+5. Open `http://localhost:5293` in your browser.
+
+## Create a GitHub Release
+
+Pushing a `v*` tag builds a Windows x64 self-contained release ZIP and attaches it to a GitHub Release.
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
 ## Usage
 
 1. Open `http://localhost:5293`.
