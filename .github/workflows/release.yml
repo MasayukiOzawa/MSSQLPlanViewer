@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish Windows x64 release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore .\MSSQLPlanViewer.sln
+
+      - name: Test
+        run: dotnet test .\MSSQLPlanViewer.sln -c Release --no-restore
+
+      - name: Publish Windows x64
+        run: >
+          dotnet publish .\src\MSSQLPlanViewer.Web\MSSQLPlanViewer.Web.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:EnableCompressionInSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          -o artifacts\publish\win-x64
+
+      - name: Package release asset
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "${{ github.ref_name }}"
+          $publishDir = "artifacts\publish\win-x64"
+          $assetName = "MSSQLPlanViewer-$tag-win-x64.zip"
+          $assetPath = "artifacts\$assetName"
+
+          Remove-Item -Path "$publishDir\*.pdb" -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path "$publishDir\appsettings.Development.json" -Force -ErrorAction SilentlyContinue
+          Copy-Item -Path LICENSE -Destination $publishDir -Force
+          Copy-Item -Path THIRD-PARTY-NOTICES.md -Destination $publishDir -Force
+
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          Compress-Archive -Path "$publishDir\*" -DestinationPath $assetPath -Force
+
+          "ASSET_NAME=$assetName" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "ASSET_PATH=$assetPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}"
+          "$env:ASSET_PATH"
+          --title "${{ github.ref_name }}"
+          --generate-notes
