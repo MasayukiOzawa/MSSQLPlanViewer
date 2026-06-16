@@ -1,0 +1,13 @@
+.git/
+.vs/
+.playwright-mcp/
+artifacts/
+TestResults/
+bin/
+obj/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.cache
+*.pdb

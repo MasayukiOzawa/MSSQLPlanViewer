@@ -1,0 +1,15 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build MSSQLPlanViewer.Web",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "${workspaceFolder}/src/MSSQLPlanViewer.Web/MSSQLPlanViewer.Web.csproj"
+      ],
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}

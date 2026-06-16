@@ -69,6 +69,40 @@ dotnet run --project .\src\MSSQLPlanViewer.Web\MSSQLPlanViewer.Web.csproj
 
 The default launch profile starts the app at `http://localhost:5293`.
 
+## Run with Docker
+
+Build and run the web app container:
+
+```powershell
+docker build -t mssql-plan-viewer .
+docker run --rm -p 5293:5293 mssql-plan-viewer
+```
+
+Open `http://localhost:5293` in your browser.
+
+## Develop in a Dev Container
+
+Open the repository in VS Code with the Dev Containers extension, then choose **Reopen in Container**.
+
+Inside the container, restore and test the solution:
+
+```bash
+dotnet restore ./MSSQLPlanViewer.sln
+dotnet test ./MSSQLPlanViewer.sln
+```
+
+Run the app inside the container:
+
+```bash
+dotnet run --project ./src/MSSQLPlanViewer.Web/MSSQLPlanViewer.Web.csproj --urls http://0.0.0.0:5293
+```
+
+The Dev Container forwards port `5293`, so the app is available at `http://localhost:5293`.
+
+To debug the app, select **MSSQL Plan Viewer (Dev Container)** in VS Code and press F5.
+
+If `bin` or `obj` permission errors appear after changing Dev Container settings, run **Dev Containers: Rebuild Container**.
+
 ## Run from a GitHub Release
 
 1. Download `MSSQLPlanViewer-vX.Y.Z-win-x64.zip` from the GitHub Releases page.
