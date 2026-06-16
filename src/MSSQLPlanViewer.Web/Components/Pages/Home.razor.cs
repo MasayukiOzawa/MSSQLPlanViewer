@@ -8,13 +8,28 @@ using MSSQLPlanViewer.Core.Formatting;
 using MSSQLPlanViewer.Core.Models;
 using MSSQLPlanViewer.Core.Parsing;
 using MSSQLPlanViewer.Core.Rendering;
+using MSSQLPlanViewer.Web.Showplans;
 using MSSQLPlanViewer.Web.State;
 
 namespace MSSQLPlanViewer.Web.Components.Pages;
 
 public partial class Home
 {
+    private PlanInputMode ActiveInputMode { get; set; } = PlanInputMode.ShowplanXml;
+
     private string XmlInput { get; set; } = string.Empty;
+
+    private string QueryConnectionString { get; set; } = string.Empty;
+
+    private string QueryInput { get; set; } = string.Empty;
+
+    private string QueryPlanLabel { get; set; } = string.Empty;
+
+    private int QueryCommandTimeoutSeconds { get; set; } = SqlEstimatedShowplanProvider.DefaultCommandTimeoutSeconds;
+
+    private bool ShowConnectionString { get; set; }
+
+    private bool IsFetchingEstimatedPlan { get; set; }
 
     private int GraphCostThresholdPercent { get; set; } = 20;
 
@@ -22,9 +37,13 @@ public partial class Home
 
     private string? ParseError { get; set; }
 
+    private string? EstimatedPlanError { get; set; }
+
     private int TableFocusRequestVersion { get; set; }
 
     private int PastedPlanCounter { get; set; }
+
+    private int EstimatedPlanCounter { get; set; }
 
     private readonly List<LoadedPlan> Plans = new();
 
@@ -34,7 +53,9 @@ public partial class Home
 
     private Guid? ComparePlanBId { get; set; }
 
-    private readonly List<FileLoadMessage> FileLoadMessages = new();
+    private readonly List<InputMessage> FileLoadMessages = new();
+
+    private readonly List<InputMessage> EstimatedPlanMessages = new();
 
     private string? TableActionMessage { get; set; }
 
@@ -110,7 +131,13 @@ public partial class Home
 
     private PlanNode? OverlayNode => HoveredNode ?? SelectedNode;
 
-    private sealed record FileLoadMessage(string Text, bool IsError);
+    private enum PlanInputMode
+    {
+        ShowplanXml,
+        Query
+    }
+
+    private sealed record InputMessage(string Text, bool IsError);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -241,7 +268,9 @@ public partial class Home
     private void ParsePlan()
     {
         ParseError = null;
+        EstimatedPlanError = null;
         FileLoadMessages.Clear();
+        EstimatedPlanMessages.Clear();
 
         try
         {
@@ -262,7 +291,9 @@ public partial class Home
     private async Task HandleFilesSelected(InputFileChangeEventArgs args)
     {
         ParseError = null;
+        EstimatedPlanError = null;
         FileLoadMessages.Clear();
+        EstimatedPlanMessages.Clear();
 
         IReadOnlyList<IBrowserFile> files;
         try
@@ -271,7 +302,7 @@ public partial class Home
         }
         catch (InvalidOperationException)
         {
-            FileLoadMessages.Add(new FileLoadMessage($"Too many files selected; the maximum is {MaxFileCount}.", IsError: true));
+            FileLoadMessages.Add(new InputMessage($"Too many files selected; the maximum is {MaxFileCount}.", IsError: true));
             return;
         }
 
@@ -287,7 +318,7 @@ public partial class Home
         {
             if (file.Size > MaxFileBytes)
             {
-                FileLoadMessages.Add(new FileLoadMessage($"{file.Name}: file is too large (max 10 MB).", IsError: true));
+                FileLoadMessages.Add(new InputMessage($"{file.Name}: file is too large (max 10 MB).", IsError: true));
                 return;
             }
 
@@ -303,16 +334,98 @@ public partial class Home
 
             var document = ShowplanParser.Parse(xml);
             AddPlan(document, file.Name);
-            FileLoadMessages.Add(new FileLoadMessage($"{file.Name}: loaded.", IsError: false));
+            FileLoadMessages.Add(new InputMessage($"{file.Name}: loaded.", IsError: false));
         }
         catch (ShowplanParseException exception)
         {
-            FileLoadMessages.Add(new FileLoadMessage($"{file.Name}: {exception.Message}", IsError: true));
+            FileLoadMessages.Add(new InputMessage($"{file.Name}: {exception.Message}", IsError: true));
         }
         catch (Exception exception)
         {
-            FileLoadMessages.Add(new FileLoadMessage($"{file.Name}: an unexpected error occurred.", IsError: true));
+            FileLoadMessages.Add(new InputMessage($"{file.Name}: an unexpected error occurred.", IsError: true));
             Logger.LogError(exception, "Failed to load plan file {FileName}", file.Name);
+        }
+    }
+
+    private void SetInputMode(PlanInputMode inputMode)
+    {
+        ActiveInputMode = inputMode;
+        ParseError = null;
+        EstimatedPlanError = null;
+        FileLoadMessages.Clear();
+        EstimatedPlanMessages.Clear();
+    }
+
+    private async Task FetchEstimatedPlan()
+    {
+        if (IsFetchingEstimatedPlan)
+        {
+            return;
+        }
+
+        ParseError = null;
+        EstimatedPlanError = null;
+        FileLoadMessages.Clear();
+        EstimatedPlanMessages.Clear();
+
+        if (string.IsNullOrWhiteSpace(QueryConnectionString))
+        {
+            EstimatedPlanError = "Enter a SQL Server connection string.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(QueryInput))
+        {
+            EstimatedPlanError = "Enter a query.";
+            return;
+        }
+
+        if (QueryCommandTimeoutSeconds is < SqlEstimatedShowplanProvider.MinCommandTimeoutSeconds
+            or > SqlEstimatedShowplanProvider.MaxCommandTimeoutSeconds)
+        {
+            EstimatedPlanError = $"Timeout must be between {SqlEstimatedShowplanProvider.MinCommandTimeoutSeconds} and {SqlEstimatedShowplanProvider.MaxCommandTimeoutSeconds} seconds.";
+            return;
+        }
+
+        IsFetchingEstimatedPlan = true;
+        try
+        {
+            var showplans = await EstimatedShowplanProvider.GetEstimatedShowplansAsync(
+                new EstimatedShowplanRequest(
+                    QueryConnectionString,
+                    QueryInput,
+                    QueryCommandTimeoutSeconds));
+
+            EstimatedPlanCounter++;
+            var baseLabel = string.IsNullOrWhiteSpace(QueryPlanLabel)
+                ? $"Estimated #{EstimatedPlanCounter.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+                : QueryPlanLabel.Trim();
+
+            foreach (var showplan in showplans)
+            {
+                var document = ShowplanParser.Parse(showplan.Xml);
+                AddPlan(document, BuildEstimatedPlanLabel(baseLabel, showplan.Ordinal, showplans.Count));
+            }
+
+            EstimatedPlanMessages.Add(new InputMessage(FormatEstimatedPlanLoadedMessage(showplans.Count), IsError: false));
+        }
+        catch (EstimatedShowplanException exception)
+        {
+            EstimatedPlanError = exception.Message;
+            Logger.LogWarning(exception, "Failed to retrieve estimated showplan XML.");
+        }
+        catch (ShowplanParseException exception)
+        {
+            EstimatedPlanError = $"SQL Server returned Showplan XML, but it could not be parsed: {exception.Message}";
+        }
+        catch (Exception exception)
+        {
+            EstimatedPlanError = "An unexpected error occurred while retrieving the estimated execution plan.";
+            Logger.LogError(exception, "Unexpected failure while retrieving estimated showplan XML.");
+        }
+        finally
+        {
+            IsFetchingEstimatedPlan = false;
         }
     }
 
@@ -558,8 +671,15 @@ public partial class Home
     private void ClearInput()
     {
         XmlInput = string.Empty;
+        QueryConnectionString = string.Empty;
+        QueryInput = string.Empty;
+        QueryPlanLabel = string.Empty;
+        QueryCommandTimeoutSeconds = SqlEstimatedShowplanProvider.DefaultCommandTimeoutSeconds;
+        ShowConnectionString = false;
         ParseError = null;
+        EstimatedPlanError = null;
         FileLoadMessages.Clear();
+        EstimatedPlanMessages.Clear();
     }
 
     private const long MaxFileBytes = 10L * 1024 * 1024;
@@ -568,4 +688,14 @@ public partial class Home
 
     private static string FormatInt(int? value) =>
         value?.ToString() ?? "n/a";
+
+    private static string BuildEstimatedPlanLabel(string baseLabel, int ordinal, int count) =>
+        count > 1
+            ? $"{baseLabel} ({ordinal.ToString(System.Globalization.CultureInfo.InvariantCulture)})"
+            : baseLabel;
+
+    private static string FormatEstimatedPlanLoadedMessage(int count) =>
+        count == 1
+            ? "1 estimated plan loaded."
+            : $"{count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} estimated plans loaded.";
 }
