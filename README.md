@@ -9,6 +9,7 @@ MSSQL Plan Viewer is a Blazor web application that parses SQL Server **Showplan 
 ## Features
 
 - Paste **Showplan XML** or load **`.sqlplan` / `.xml`** files via drag-and-drop or file picker
+- Retrieve **estimated execution plans** from SQL Server by entering a connection string and query
 - Load multiple plans, switch between **tabs**, and use **Compare plans**
 - **Graphical plan**
   - Inline SVG rendering
@@ -49,6 +50,10 @@ MSSQL Plan Viewer is a Blazor web application that parses SQL Server **Showplan 
   - `POST /api/exports/table?format=md`
   - `POST /api/exports/graph?format=svg`
   - `POST /api/exports/graph?format=png`
+- **Estimated Showplan API**
+  - Accepts a connection string and query
+  - Uses `SET SHOWPLAN_XML ON`, so the target query is compiled but not executed
+  - `POST /api/showplans/estimated`
 
 ## Project structure
 
@@ -128,14 +133,26 @@ git push origin v0.1.0
 ## Usage
 
 1. Open `http://localhost:5293`.
-2. Paste SQL Server Showplan XML into the input box, or drop/select one or more `.sqlplan` / `.xml` files.
-3. Click **Parse**. Loaded files appear as tabs.
+2. Paste SQL Server Showplan XML into the input box, drop/select one or more `.sqlplan` / `.xml` files, or switch to **Query** and enter a SQL Server connection string plus query.
+3. Click **Parse** for XML input, or **Get estimated plan** for query input. Loaded plans appear as tabs.
 4. If a plan contains multiple statements, choose the active statement from the statement selector.
 5. Inspect the **Graphical plan**, **Table view**, **Diagnostics**, **Plan details**, and **Operator details** panes.
 6. Select an operator in the graph, table, or Diagnostics table to synchronize the focused node and details panel.
 7. Use **Download CSV**, **Download Markdown**, or **Copy** in Table view to export tabular data.
 8. Use **Export SVG** or **Export PNG** in Graphical plan to export the current graph.
 9. Load two or more plans to compare aggregate metrics with **Compare plans**.
+
+## Estimated plans from a query
+
+The **Query** input mode connects to SQL Server and retrieves estimated Showplan XML with `SET SHOWPLAN_XML ON`. SQL Server compiles the query and returns the XML plan; the target query is not executed.
+
+Requirements and behavior:
+
+- The connection string is entered per request and is not saved by the app.
+- The app does not log the connection string.
+- The SQL Server login must have permission to compile the submitted query and `SHOWPLAN` permission for referenced databases.
+- Use this feature only in a trusted internal deployment or behind appropriate network/application access controls.
+- Submit T-SQL that SQL Server can execute as a single client command. Client-side batch separators such as `GO` are not interpreted by `Microsoft.Data.SqlClient`.
 
 ## Test
 
@@ -224,7 +241,141 @@ Error responses use ASP.NET Core problem details JSON.
 | `400` | `format` is missing or unsupported, `showplanXml` is empty, or the XML cannot be parsed. |
 | `404` | The Showplan XML contains no statements, or the requested `statementId` does not exist. |
 
-### API examples
+## Estimated Showplan API
+
+- `POST /api/showplans/estimated`
+
+Request body:
+
+```json
+{
+  "connectionString": "Server=.;Database=AdventureWorks2022;Integrated Security=true;TrustServerCertificate=true;",
+  "query": "SELECT TOP (10) * FROM Sales.SalesOrderHeader;",
+  "label": "Sales order lookup",
+  "commandTimeoutSeconds": 60
+}
+```
+
+Response body:
+
+```json
+{
+  "plans": [
+    {
+      "label": "Sales order lookup",
+      "showplanXml": "<ShowPlanXML ...>...</ShowPlanXML>",
+      "statementCount": 1,
+      "schemaVersion": "SqlServer2022",
+      "totalNodeCount": 4,
+      "totalWarningCount": 0
+    }
+  ]
+}
+```
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `connectionString` | string | Yes | - | SQL Server connection string used only for the current request. |
+| `query` | string | Yes | - | Query used to retrieve the estimated execution plan. |
+| `label` | string | No | `Estimated` | Base label for returned plans. |
+| `commandTimeoutSeconds` | number | No | `60` | Command timeout from `1` to `300` seconds. |
+
+| Status | When |
+| --- | --- |
+| `400` | Required fields are missing, or `commandTimeoutSeconds` is outside `1` to `300`. |
+| `502` | SQL Server connection, permission, compilation, or Showplan retrieval fails. |
+| `504` | SQL Server does not return before the command timeout. |
+
+## Estimated Showplan API examples
+
+Start the app first:
+
+```powershell
+dotnet run --project .\src\MSSQLPlanViewer.Web\MSSQLPlanViewer.Web.csproj
+```
+
+Retrieve an estimated execution plan and save the first returned Showplan XML as a `.sqlplan` file:
+
+```powershell
+$baseUrl = "http://localhost:5293"
+$body = @{
+    connectionString = "Server=.;Database=AdventureWorks2022;Integrated Security=true;TrustServerCertificate=true;"
+    query = "SELECT TOP (10) * FROM Sales.SalesOrderHeader;"
+    label = "Sales order lookup"
+    commandTimeoutSeconds = 60
+} | ConvertTo-Json -Depth 5
+
+$response = Invoke-RestMethod `
+    -Uri "$baseUrl/api/showplans/estimated" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body $body
+
+$response.plans |
+    Select-Object label, statementCount, schemaVersion, totalNodeCount, totalWarningCount
+
+$response.plans[0].showplanXml |
+    Set-Content .\estimated-plan.sqlplan -Encoding utf8
+```
+
+You can also save the request body and call the endpoint with `curl.exe`:
+
+```powershell
+$body | Set-Content .\estimated-showplan-request.json -Encoding utf8
+
+curl.exe -X POST "$baseUrl/api/showplans/estimated" `
+    -H "Content-Type: application/json" `
+    --data-binary "@estimated-showplan-request.json" `
+    -o estimated-showplan-response.json
+```
+
+The response JSON contains one or more `plans` entries. Each entry includes `showplanXml`, which can be pasted into the viewer, saved as `.sqlplan`, or sent to the Export API as `showplanXml`.
+
+### Retrieve an estimated plan and analyze it
+
+This example retrieves an estimated execution plan from SQL Server, then sends the returned Showplan XML to the existing Export API to produce analysis artifacts.
+
+```powershell
+$baseUrl = "http://localhost:5293"
+
+$estimatedPlanRequest = @{
+    connectionString = "Server=.;Database=AdventureWorks2022;Integrated Security=true;TrustServerCertificate=true;"
+    query = "SELECT TOP (10) * FROM Sales.SalesOrderHeader;"
+    label = "Sales order lookup"
+    commandTimeoutSeconds = 60
+} | ConvertTo-Json -Depth 5
+
+$estimatedPlanResponse = Invoke-RestMethod `
+    -Uri "$baseUrl/api/showplans/estimated" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body $estimatedPlanRequest
+
+$plan = $estimatedPlanResponse.plans[0]
+$plan.showplanXml | Set-Content .\estimated-plan.sqlplan -Encoding utf8
+
+$analysisRequest = @{
+    showplanXml = $plan.showplanXml
+} | ConvertTo-Json -Depth 5
+
+Invoke-WebRequest `
+    -Uri "$baseUrl/api/exports/table?format=csv" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body $analysisRequest `
+    -OutFile .\estimated-plan-table.csv
+
+Invoke-WebRequest `
+    -Uri "$baseUrl/api/exports/graph?format=svg" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body $analysisRequest `
+    -OutFile .\estimated-plan-graph.svg
+```
+
+Open `estimated-plan.sqlplan` in the web UI to inspect the same plan with the graphical viewer, table view, diagnostics, plan details, and operator details.
+
+## Export API examples
 
 Start the app first:
 

@@ -5,6 +5,7 @@ using MSSQLPlanViewer.Core.Rendering;
 using MSSQLPlanViewer.Core.Comparison;
 using MSSQLPlanViewer.Core.Diagnostics;
 using MSSQLPlanViewer.Core.Diagnostics.Rules;
+using MSSQLPlanViewer.Web.Showplans;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +32,7 @@ builder.Services.AddScoped<IPlanDiagnosticRule, MemoryGrantMismatchRule>();
 builder.Services.AddScoped<IPlanDiagnosticRule, StaleStatisticsRule>();
 builder.Services.AddScoped<IPlanDiagnosticRule, LargeScanWithResidualPredicateRule>();
 builder.Services.AddScoped<IPlanDiagnosticRule, ParallelThreadSkewRule>();
+builder.Services.AddScoped<IEstimatedShowplanProvider, SqlEstimatedShowplanProvider>();
 
 var app = builder.Build();
 
@@ -48,6 +50,7 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapPlanExportEndpoints();
+app.MapEstimatedShowplanEndpoints();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

@@ -5,7 +5,9 @@
 @inject IPlanTableProjector TableProjector
 @inject IPlanComparisonService PlanComparisonService
 @inject IPlanDiagnosticsService PlanDiagnosticsService
+@inject IEstimatedShowplanProvider EstimatedShowplanProvider
 @inject ILogger<Home> Logger
+@using MSSQLPlanViewer.Web.Showplans
 
 <PageTitle>MSSQL Plan Viewer</PageTitle>
 
@@ -23,39 +25,130 @@
     <section class="input-card card-surface">
         <div class="section-header">
             <div>
-                <h2>Showplan XML Input</h2>
+                <h2>@(ActiveInputMode == PlanInputMode.ShowplanXml ? "Showplan XML Input" : "Query Input")</h2>
             </div>
-            <button class="btn btn-primary" @onclick="ParsePlan">
-                Parse
+            @if (ActiveInputMode == PlanInputMode.ShowplanXml)
+            {
+                <button class="btn btn-primary" @onclick="ParsePlan">
+                    Parse
+                </button>
+            }
+            else
+            {
+                <button class="btn btn-primary" @onclick="FetchEstimatedPlan" disabled="@IsFetchingEstimatedPlan">
+                    @(IsFetchingEstimatedPlan ? "Getting plan..." : "Get estimated plan")
+                </button>
+            }
+        </div>
+
+        <div class="input-mode-toggle" role="group" aria-label="Plan input mode">
+            <button type="button"
+                    class="input-mode-button @(ActiveInputMode == PlanInputMode.ShowplanXml ? "is-active" : null)"
+                    aria-pressed="@(ActiveInputMode == PlanInputMode.ShowplanXml)"
+                    @onclick="() => SetInputMode(PlanInputMode.ShowplanXml)">
+                Showplan XML
+            </button>
+            <button type="button"
+                    class="input-mode-button @(ActiveInputMode == PlanInputMode.Query ? "is-active" : null)"
+                    aria-pressed="@(ActiveInputMode == PlanInputMode.Query)"
+                    @onclick="() => SetInputMode(PlanInputMode.Query)">
+                Query
             </button>
         </div>
 
-        <textarea class="plan-input"
-                  @bind="XmlInput"
-                  @bind:event="oninput"
-                  spellcheck="false"
-                  placeholder="Paste SQL Server Showplan XML here."></textarea>
-
-        <label class="file-dropzone" @ref="fileDropzoneRef">
-            <InputFile OnChange="HandleFilesSelected" multiple accept=".sqlplan,.xml" />
-            <span class="file-dropzone-text">Drop .sqlplan or .xml files here, or click to choose</span>
-        </label>
-
-        @if (FileLoadMessages.Count > 0)
+        @if (ActiveInputMode == PlanInputMode.ShowplanXml)
         {
-            <ul class="file-load-messages" aria-live="polite">
-                @foreach (var message in FileLoadMessages)
-                {
-                    <li class="file-load-message @(message.IsError ? "is-error" : "is-success")">@message.Text</li>
-                }
-            </ul>
+            <textarea class="plan-input"
+                      @bind="XmlInput"
+                      @bind:event="oninput"
+                      spellcheck="false"
+                      placeholder="Paste SQL Server Showplan XML here."></textarea>
+
+            <label class="file-dropzone" @ref="fileDropzoneRef">
+                <InputFile OnChange="HandleFilesSelected" multiple accept=".sqlplan,.xml" />
+                <span class="file-dropzone-text">Drop .sqlplan or .xml files here, or click to choose</span>
+            </label>
+
+            @if (FileLoadMessages.Count > 0)
+            {
+                <ul class="file-load-messages" aria-live="polite">
+                    @foreach (var message in FileLoadMessages)
+                    {
+                        <li class="file-load-message @(message.IsError ? "is-error" : "is-success")">@message.Text</li>
+                    }
+                </ul>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(ParseError))
+            {
+                <div class="alert alert-danger parse-error" role="alert">
+                    @ParseError
+                </div>
+            }
         }
-
-        @if (!string.IsNullOrWhiteSpace(ParseError))
+        else
         {
-            <div class="alert alert-danger parse-error" role="alert">
-                @ParseError
+            <div class="query-form">
+                <div class="query-form-grid">
+                    <label class="query-field query-field-wide">
+                        <span>Connection string</span>
+                        <div class="connection-input-group">
+                            <input class="form-control"
+                                   type="@(ShowConnectionString ? "text" : "password")"
+                                   autocomplete="off"
+                                   @bind="QueryConnectionString"
+                                   @bind:event="oninput"
+                                   placeholder="Server=.;Database=AdventureWorks;Integrated Security=true;TrustServerCertificate=true;" />
+                            <label class="connection-toggle">
+                                <input type="checkbox" class="form-check-input" @bind="ShowConnectionString" />
+                                <span>Show</span>
+                            </label>
+                        </div>
+                    </label>
+                    <label class="query-field">
+                        <span>Plan label</span>
+                        <input class="form-control"
+                               @bind="QueryPlanLabel"
+                               @bind:event="oninput"
+                               placeholder="Optional" />
+                    </label>
+                    <label class="query-field timeout-field">
+                        <span>Timeout</span>
+                        <div class="input-group input-group-sm">
+                            <input type="number"
+                                   class="form-control"
+                                   min="@SqlEstimatedShowplanProvider.MinCommandTimeoutSeconds"
+                                   max="@SqlEstimatedShowplanProvider.MaxCommandTimeoutSeconds"
+                                   step="1"
+                                   @bind="QueryCommandTimeoutSeconds" />
+                            <span class="input-group-text">s</span>
+                        </div>
+                    </label>
+                </div>
+
+                <textarea class="plan-input query-input"
+                          @bind="QueryInput"
+                          @bind:event="oninput"
+                          spellcheck="false"
+                          placeholder="SELECT ..."></textarea>
             </div>
+
+            @if (EstimatedPlanMessages.Count > 0)
+            {
+                <ul class="file-load-messages" aria-live="polite">
+                    @foreach (var message in EstimatedPlanMessages)
+                    {
+                        <li class="file-load-message @(message.IsError ? "is-error" : "is-success")">@message.Text</li>
+                    }
+                </ul>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(EstimatedPlanError))
+            {
+                <div class="alert alert-danger parse-error" role="alert">
+                    @EstimatedPlanError
+                </div>
+            }
         }
     </section>
 
