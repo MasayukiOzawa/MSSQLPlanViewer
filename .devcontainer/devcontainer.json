@@ -1,0 +1,22 @@
+{
+  "name": "MSSQL Plan Viewer",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:10.0-noble",
+  "workspaceFolder": "/workspaces/MSSQLPlanViewer",
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+  "forwardPorts": [5293],
+  "portsAttributes": {
+    "5293": {
+      "label": "MSSQL Plan Viewer"
+    }
+  },
+  "postCreateCommand": "sudo find . -type d \\( -name bin -o -name obj \\) -prune -exec rm -rf {} + && dotnet restore ./MSSQLPlanViewer.sln",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csdevkit",
+        "ms-dotnettools.csharp"
+      ]
+    }
+  }
+}
