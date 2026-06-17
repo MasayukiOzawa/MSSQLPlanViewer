@@ -174,20 +174,29 @@ public partial class Home
             .Where(property => !string.IsNullOrWhiteSpace(property.Value))
             .ToArray();
 
-    private static IReadOnlyList<PlanProperty> GetWarningItems(StatementPlan statement) =>
-        statement.Warnings
-            .Concat(statement.Nodes.SelectMany(node => node.Warnings))
-            .Select(warning => (
-                warning.Name,
-                Display: BuildWarningDisplayText(warning)))
-            .GroupBy(warning => (warning.Name, warning.Display))
-            .Select(group => new PlanProperty(
-                    group.Key.Name,
-                    group.Count() > 1
-                    ? $"{group.Count().ToString("N0", System.Globalization.CultureInfo.InvariantCulture)}x {group.Key.Display}"
-                    : group.Key.Display))
-            .OrderBy(property => property.Name, StringComparer.Ordinal)
-            .ToArray();
+    private static IReadOnlyList<WarningTableRow> GetWarningRows(StatementPlan statement)
+    {
+        var rows = new List<WarningTableRow>();
+
+        rows.AddRange(statement.Warnings
+            .Select(warning => new WarningTableRow(
+                NodeId: null,
+                Operator: "Statement",
+                Warning: GetWarningName(warning),
+                Details: BuildWarningDisplayText(warning))));
+
+        rows.AddRange(statement.Nodes
+            .Where(node => node.Warnings.Count > 0)
+            .OrderBy(GetNodeSortKey)
+            .ThenBy(node => node.NodeId, StringComparer.Ordinal)
+            .SelectMany(node => node.Warnings.Select(warning => new WarningTableRow(
+                node.NodeId,
+                BuildWarningOperatorText(node),
+                GetWarningName(warning),
+                BuildWarningDisplayText(warning)))));
+
+        return rows;
+    }
 
     private static IReadOnlyList<SummaryTableRow> BuildCombinedPlanDetailRows(
         IReadOnlyList<PlanProperty> queryTimeStatsItems,
@@ -238,6 +247,24 @@ public partial class Home
         return FormatSummaryValue(value);
     }
 
+    private static string BuildWarningOperatorText(PlanNode node)
+    {
+        if (!string.IsNullOrWhiteSpace(node.PhysicalOp))
+        {
+            return FormatSummaryValue(node.PhysicalOp);
+        }
+
+        return FormatSummaryValue(node.LogicalOp);
+    }
+
+    private static string GetWarningName(PlanWarning warning) =>
+        string.IsNullOrWhiteSpace(warning.Name) ? "Warning" : warning.Name;
+
+    private static int GetNodeSortKey(PlanNode node) =>
+        int.TryParse(node.NodeId, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var nodeId)
+            ? nodeId
+            : int.MaxValue;
+
     private static string FormatSummaryValue(string? value)
     {
         if (string.IsNullOrWhiteSpace(value) || string.Equals(value, "n/a", StringComparison.OrdinalIgnoreCase))
@@ -264,6 +291,12 @@ public partial class Home
         string Value,
         bool ShowSection,
         int SectionRowSpan);
+
+    private sealed record WarningTableRow(
+        string? NodeId,
+        string Operator,
+        string Warning,
+        string Details);
 
     private void ParsePlan()
     {

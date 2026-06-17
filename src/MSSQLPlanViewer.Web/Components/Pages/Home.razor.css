@@ -266,26 +266,6 @@ h1 {
     text-transform: uppercase;
 }
 
-.warning-summary-card {
-    justify-content: flex-start;
-}
-
-.warning-summary-card .summary-detail-row {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.2rem;
-}
-
-.warning-summary-card .summary-detail-row dt {
-    font-weight: 700;
-    color: #0f172a;
-}
-
-.warning-summary-card .summary-detail-row dd {
-    text-align: left;
-    font-weight: 500;
-    color: #334155;
-}
-
 .summary-detail-list {
     display: flex;
     flex-direction: column;
@@ -378,6 +358,88 @@ h1 {
 
 .summary-table .numeric-cell {
     text-align: right;
+}
+
+.warning-details-table {
+    min-width: 62rem;
+}
+
+.warning-details-table th,
+.warning-details-table td {
+    vertical-align: top;
+}
+
+.warning-details-table tr.selected-warning-row > * {
+    --bs-table-bg: #eff6ff;
+    background-color: #eff6ff;
+}
+
+.warning-node-col,
+.warning-node-cell {
+    width: 9rem;
+}
+
+.warning-node-cell {
+    white-space: nowrap;
+}
+
+.warning-node-button,
+.warning-statement-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1.75rem;
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.warning-node-button {
+    border: 1px solid #bfdbfe;
+    background: #f8fbff;
+    color: #1d4ed8;
+    cursor: pointer;
+}
+
+.warning-node-button:hover,
+.warning-node-button:focus-visible {
+    border-color: #2563eb;
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.warning-details-table tr.selected-warning-row .warning-node-button {
+    border-color: #2563eb;
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.warning-statement-label {
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #475569;
+}
+
+.warning-operator-cell {
+    min-width: 12rem;
+    font-weight: 600;
+    white-space: normal;
+}
+
+.warning-name-cell {
+    min-width: 18rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.warning-details-cell {
+    min-width: 26rem;
+    max-width: 56rem;
+    color: #334155;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .statement-toolbar {
