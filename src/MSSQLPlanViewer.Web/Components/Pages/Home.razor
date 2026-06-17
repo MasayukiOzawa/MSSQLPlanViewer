@@ -253,7 +253,7 @@
 
     @if (Document is not null && SelectedStatement is not null)
     {
-        var warningItems = GetWarningItems(SelectedStatement);
+        var warningRows = GetWarningRows(SelectedStatement);
         var statementSummaryItems = GetStatementSummaryItems(SelectedStatement);
         var queryTimeStatsItems = GetVisibleProperties(SelectedStatement.Summary.QueryTimeStatsProperties);
         var queryPlanItems = GetVisibleProperties(SelectedStatement.Summary.QueryPlanProperties);
@@ -328,16 +328,6 @@
                 <small>Total: @Document.TotalWarningCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</small>
             </div>
         </section>
-
-        @if (warningItems.Count > 0)
-        {
-            <section class="statement-summary-grid">
-                <div class="summary-card summary-detail-card summary-wide-card card-surface warning-summary-card">
-                    <span class="summary-label">Warning details</span>
-                    <SummaryDetailList Items="warningItems" />
-                </div>
-            </section>
-        }
 
         @if (combinedPlanDetailRows.Count > 0)
         {
@@ -500,6 +490,53 @@
                                     <td class="object-cell">@item.WaitType</td>
                                     <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.WaitTimeMs))</td>
                                     <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.WaitCount))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+
+        @if (warningRows.Count > 0)
+        {
+            <section class="card-surface summary-table-card warning-details-card">
+                <div class="section-header compact">
+                    <div>
+                        <span class="summary-label">Warning details</span>
+                    </div>
+                </div>
+                <div class="summary-table-shell warning-table-shell">
+                    <table class="table table-sm align-middle summary-table warning-details-table">
+                        <thead>
+                            <tr>
+                                <th scope="col" class="warning-node-col">Node</th>
+                                <th scope="col">Operator</th>
+                                <th scope="col">Warning</th>
+                                <th scope="col">Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in warningRows)
+                            {
+                                <tr class="@(string.Equals(row.NodeId, SelectedNodeId, StringComparison.Ordinal) ? "selected-warning-row" : null)">
+                                    <td class="warning-node-cell">
+                                        @if (row.NodeId is null)
+                                        {
+                                            <span class="warning-statement-label">Statement</span>
+                                        }
+                                        else
+                                        {
+                                            <button type="button"
+                                                    class="warning-node-button"
+                                                    @onclick="@(() => HandleGraphNodeSelected(row.NodeId!))">
+                                                Node @row.NodeId
+                                            </button>
+                                        }
+                                    </td>
+                                    <td class="warning-operator-cell">@row.Operator</td>
+                                    <td class="warning-name-cell">@row.Warning</td>
+                                    <td class="warning-details-cell">@row.Details</td>
                                 </tr>
                             }
                         </tbody>
