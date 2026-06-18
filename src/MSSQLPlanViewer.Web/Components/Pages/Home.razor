@@ -594,6 +594,7 @@
                         <div class="table-header-actions">
                             <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="DownloadTableCsv" disabled="@(CurrentRows.Count == 0)">Download CSV</button>
                             <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="DownloadTableMarkdown" disabled="@(CurrentRows.Count == 0)">Download Markdown</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="DownloadTableJson" disabled="@(CurrentRows.Count == 0)">Download JSON</button>
                             <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CopyTableCsv" disabled="@(CurrentRows.Count == 0)">Copy</button>
                         </div>
                     </div>

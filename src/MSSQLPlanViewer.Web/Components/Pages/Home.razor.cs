@@ -579,6 +579,18 @@ public partial class Home
         await JS.InvokeVoidAsync("mssqlPlanViewerExport.downloadText", BuildExportFileName("md"), "text/markdown", markdown);
     }
 
+    private async Task DownloadTableJson()
+    {
+        if (CurrentRows.Count == 0)
+        {
+            return;
+        }
+
+        TableActionMessage = null;
+        var json = PlanTableJsonExporter.ToJson(CurrentRows);
+        await JS.InvokeVoidAsync("mssqlPlanViewerExport.downloadText", BuildExportFileName("json"), "application/json", json);
+    }
+
     private async Task CopyTableCsv()
     {
         if (CurrentRows.Count == 0)
