@@ -44,12 +44,56 @@ else
                 </marker>
             </defs>
 
+            @foreach (var edge in Layout.StatementEdges)
+            {
+                <path d="@BuildEdgePath(edge)"
+                      class="graph-edge statement-edge"
+                      marker-end="@($"url(#{MarkerId})")" />
+            }
+
             @foreach (var edge in Layout.Edges)
             {
                 var isCriticalEdge = ShowCriticalPath && edge.IsOnCriticalPath;
                 <path d="@BuildEdgePath(edge)"
                       class="@(isCriticalEdge ? "graph-edge critical-path" : "graph-edge")"
                       marker-end="@($"url(#{(isCriticalEdge ? CriticalMarkerId : MarkerId)})")" />
+            }
+
+            @if (Layout.StatementNode is not null)
+            {
+                var statementNode = Layout.StatementNode;
+                var isStatementSelected = string.Equals(statementNode.StatementId, SelectedStatementId, StringComparison.Ordinal);
+                var bodyX = statementNode.X;
+                var bodyY = statementNode.Y;
+                var iconTileX = bodyX + 16;
+                var iconTileY = bodyY + 16;
+                var iconOriginX = iconTileX + 8;
+                var iconOriginY = iconTileY + 8;
+                var contentX = bodyX + 66;
+                var contentY = bodyY + 28;
+
+                <g class="@GetStatementNodeClass(isStatementSelected)"
+                   data-statement-id="@statementNode.StatementId"
+                   @onclick="@(() => SelectStatement(statementNode.StatementId))">
+                    <rect x="@bodyX" y="@bodyY" width="@statementNode.Width" height="@statementNode.Height" rx="18" ry="18" class="statement-node-body" />
+                    <rect x="@bodyX" y="@bodyY" width="@statementNode.Width" height="6" rx="18" ry="18" class="statement-node-accent" />
+                    <rect x="@iconTileX" y="@iconTileY" width="34" height="34" rx="10" ry="10" class="statement-node-icon-tile" />
+                    <g class="statement-node-icon" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+                        <rect x="@iconOriginX" y="@iconOriginY" width="20" height="20" rx="3"></rect>
+                        <line x1="@(iconOriginX + 5)" y1="@(iconOriginY + 6)" x2="@(iconOriginX + 15)" y2="@(iconOriginY + 6)"></line>
+                        <line x1="@(iconOriginX + 5)" y1="@(iconOriginY + 10)" x2="@(iconOriginX + 15)" y2="@(iconOriginY + 10)"></line>
+                        <line x1="@(iconOriginX + 5)" y1="@(iconOriginY + 14)" x2="@(iconOriginX + 12)" y2="@(iconOriginY + 14)"></line>
+                    </g>
+                    <text x="@contentX" y="@contentY" class="graph-title">
+                        @Trim(statementNode.PrimaryLabel, 30)
+                    </text>
+                    <text x="@contentX" y="@(contentY + 21)" class="graph-subtitle">
+                        @Trim(statementNode.SecondaryLabel, 30)
+                    </text>
+                    <text x="@contentX" y="@(contentY + 42)" class="graph-meta">
+                        Statement @statementNode.StatementId | Query cost @PlanDisplayFormatter.FormatPercent(statementNode.CostRatio)
+                    </text>
+                </g>
             }
 
             @foreach (var node in Layout.Nodes)
@@ -199,6 +243,9 @@ else
     public string? SelectedNodeId { get; set; }
 
     [Parameter]
+    public string? SelectedStatementId { get; set; }
+
+    [Parameter]
     public int CostHighlightThresholdPercent { get; set; } = 20;
 
     [Parameter]
@@ -209,6 +256,9 @@ else
 
     [Parameter]
     public EventCallback<string> OnSelectNode { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnSelectStatement { get; set; }
 
     [Parameter]
     public EventCallback<string?> OnHoverNode { get; set; }
@@ -280,6 +330,8 @@ else
     }
 
     private Task SelectNode(string nodeId) => OnSelectNode.InvokeAsync(nodeId);
+
+    private Task SelectStatement(string statementId) => OnSelectStatement.InvokeAsync(statementId);
 
     private Task HoverNode(string nodeId) => OnHoverNode.InvokeAsync(nodeId);
 
@@ -388,6 +440,9 @@ else
 
         return string.Join(" ", classes);
     }
+
+    private static string GetStatementNodeClass(bool isSelected) =>
+        isSelected ? "statement-graph-node selected" : "statement-graph-node";
 
     private static string GetCardFill(GraphNodeLayout node, bool isSelected)
     {

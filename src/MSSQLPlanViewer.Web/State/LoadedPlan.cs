@@ -22,6 +22,8 @@ public sealed class LoadedPlan
 
     public string? HoveredNodeId { get; set; }
 
+    public bool IsStatementDetailsSelected { get; set; }
+
     public StatementGraphLayout? SelectedLayout { get; set; }
 
     public IReadOnlyList<PlanTableRow> CurrentRows { get; set; } = Array.Empty<PlanTableRow>();

@@ -28,6 +28,78 @@ public static class PlanDisplayFormatter
         };
     }
 
+    public static string FormatNumericText(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        var trimmed = value.Trim();
+        if (!decimal.TryParse(
+            trimmed,
+            NumberStyles.Float | NumberStyles.AllowThousands,
+            CultureInfo.InvariantCulture,
+            out var numericValue))
+        {
+            return value;
+        }
+
+        if (trimmed.Contains('e', StringComparison.OrdinalIgnoreCase))
+        {
+            return numericValue.ToString("#,0.#############################", CultureInfo.InvariantCulture);
+        }
+
+        var sign = string.Empty;
+        if (trimmed[0] is '-' or '+')
+        {
+            sign = trimmed[0] == '-' ? "-" : string.Empty;
+            trimmed = trimmed[1..];
+        }
+
+        var decimalPointIndex = trimmed.IndexOf('.');
+        var integerPart = decimalPointIndex >= 0 ? trimmed[..decimalPointIndex] : trimmed;
+        var fractionalPart = decimalPointIndex >= 0 ? trimmed[decimalPointIndex..] : string.Empty;
+        integerPart = integerPart.Replace(",", string.Empty, StringComparison.Ordinal);
+
+        if (integerPart.Length == 0)
+        {
+            integerPart = "0";
+        }
+        else
+        {
+            integerPart = integerPart.TrimStart('0');
+            if (integerPart.Length == 0)
+            {
+                integerPart = "0";
+            }
+        }
+
+        if (numericValue == 0)
+        {
+            sign = string.Empty;
+        }
+
+        return sign + GroupIntegerDigits(integerPart) + fractionalPart;
+    }
+
+    private static string GroupIntegerDigits(string digits)
+    {
+        var firstGroupLength = digits.Length % 3;
+        if (firstGroupLength == 0)
+        {
+            firstGroupLength = 3;
+        }
+
+        var groups = new List<string> { digits[..firstGroupLength] };
+        for (var index = firstGroupLength; index < digits.Length; index += 3)
+        {
+            groups.Add(digits.Substring(index, 3));
+        }
+
+        return string.Join(",", groups);
+    }
+
     public static string FormatObjectName(PlanObjectReference? objectReference)
     {
         if (objectReference is null)

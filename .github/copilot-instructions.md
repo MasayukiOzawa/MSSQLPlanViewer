@@ -10,6 +10,7 @@ pwsh -File .\scripts\Test-PlanExportApi.ps1
 ```
 
 - `scripts\Test-PlanExportApi.ps1` expects the web app to be running on `http://localhost:5293` unless `-BaseUrl` is overridden.
+- After tests or manual verification, terminate any local app/process you started, such as `dotnet run` on `localhost:5293`, and confirm the port is no longer listening.
 - There is no separate lint script in the repository; `dotnet build` is the repository-wide command that surfaces compiler issues and warnings.
 
 ## High-level architecture

@@ -99,7 +99,9 @@ public sealed class PlanRenderingEdgeCaseTests
         Assert.Equal("7", layout.StatementId);
         Assert.Equal(0, layout.Width);
         Assert.Equal(0, layout.Height);
+        Assert.Null(layout.StatementNode);
         Assert.Empty(layout.Nodes);
+        Assert.Empty(layout.StatementEdges);
         Assert.Empty(layout.Edges);
     }
 

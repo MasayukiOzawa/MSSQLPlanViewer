@@ -71,6 +71,48 @@
     stroke-width: 3.4px;
 }
 
+.graph-edge.statement-edge {
+    stroke-dasharray: 4 4;
+}
+
+.statement-graph-node {
+    cursor: pointer;
+}
+
+.statement-node-body {
+    fill: #eff6ff;
+    stroke: #93c5fd;
+    stroke-width: 2px;
+    transition: stroke 0.16s ease, filter 0.16s ease, fill 0.16s ease;
+    filter: drop-shadow(0 10px 16px rgba(37, 99, 235, 0.08));
+}
+
+.statement-graph-node:hover .statement-node-body {
+    stroke: #2563eb;
+    filter: drop-shadow(0 16px 24px rgba(37, 99, 235, 0.14));
+}
+
+.statement-graph-node.selected .statement-node-body {
+    fill: #dbeafe;
+    stroke: #1d4ed8;
+    stroke-width: 3px;
+    filter: drop-shadow(0 18px 28px rgba(37, 99, 235, 0.18));
+}
+
+.statement-node-accent {
+    fill: #2563eb;
+}
+
+.statement-node-icon-tile {
+    fill: #dbeafe;
+    stroke: #bfdbfe;
+    stroke-width: 1px;
+}
+
+.statement-node-icon {
+    stroke: #2563eb;
+}
+
 .graph-node {
     cursor: pointer;
 }

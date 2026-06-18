@@ -581,8 +581,10 @@
                                    CostHighlightThresholdPercent="GraphCostThresholdPercent"
                                    ShowCriticalPath="ShowCriticalPath"
                                    SelectedNodeId="@SelectedNodeId"
+                                   SelectedStatementId="@SelectedStatementDetailId"
                                    ExportBaseName="@BuildExportBaseName()"
                                    OnSelectNode="HandleGraphNodeSelected"
+                                   OnSelectStatement="HandleGraphStatementSelected"
                                    OnHoverNode="HandleNodeHovered" />
                 </section>
 
@@ -623,6 +625,8 @@
             </div>
             @if (SelectedStatement is not null)
             {
+                var showStatementDetails = IsStatementDetailsSelected && OverlayNode is null;
+                var showDetails = OverlayNode is not null || showStatementDetails;
                 <aside class="details-column">
                     <section class="card-surface sticky-panel operator-pane" aria-live="polite" @ref="detailsPaneRef">
                         <div class="details-resizer"
@@ -633,10 +637,10 @@
                         <div class="section-header compact">
                             <div>
                                 <div class="eyebrow">Operator details</div>
-                                <h2>@(OverlayNode?.PhysicalOp ?? "No operator selected")</h2>
+                                <h2>@(OverlayNode?.PhysicalOp ?? (showStatementDetails ? $"{SelectedStatement.StatementType} statement" : "No operator selected"))</h2>
                             </div>
                             <div class="details-header-actions">
-                                @if (OverlayNode is not null)
+                                @if (showDetails)
                                 {
                                     <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CloseOverlay">Close</button>
                                 }
@@ -646,6 +650,10 @@
                         @if (OverlayNode is not null)
                         {
                             <PlanNodeDetails Statement="SelectedStatement" Node="OverlayNode" />
+                        }
+                        else if (showStatementDetails)
+                        {
+                            <PlanNodeDetails Statement="SelectedStatement" />
                         }
                     </section>
                 </aside>

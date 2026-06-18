@@ -33,6 +33,55 @@ public sealed class PlanProjectionTests
     }
 
     [Fact]
+    public void GraphLayout_AddsStatementNodeFromStatementType()
+    {
+        var summary = new StatementPlanSummary(10m, 1, null, null, null, null, null, null, Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<OptimizerStatsUsageEntry>(), Array.Empty<MissingIndexEntry>(), Array.Empty<WaitStatEntry>(), Array.Empty<AccessedObjectEntry>());
+        var statement = new StatementPlan(
+            StatementId: "1",
+            StatementType: "SELECT",
+            StatementText: "SELECT * FROM dbo.NATION",
+            Summary: summary,
+            Nodes: new[] { CreateNode("0", 10m) },
+            Edges: Array.Empty<PlanEdge>(),
+            Warnings: Array.Empty<PlanWarning>(),
+            RootNodeIds: new[] { "0" });
+
+        var layout = graphLayoutService.CreateLayout(statement, 0.25m);
+
+        var statementNode = Assert.IsType<StatementGraphNodeLayout>(layout.StatementNode);
+        Assert.Equal("SELECT", statementNode.PrimaryLabel);
+        Assert.Equal("SELECT * FROM dbo.NATION", statementNode.SecondaryLabel);
+        Assert.Equal(0.25m, statementNode.CostRatio);
+        Assert.True(statementNode.Y < layout.Nodes[0].Y);
+
+        var statementEdge = Assert.Single(layout.StatementEdges);
+        Assert.Equal("1", statementEdge.FromNodeId);
+        Assert.Equal("0", statementEdge.ToNodeId);
+        Assert.False(statementEdge.IsOnCriticalPath);
+    }
+
+    [Fact]
+    public void GraphLayout_FallsBackWhenStatementTypeIsShowplanElementName()
+    {
+        var summary = new StatementPlanSummary(10m, 1, null, null, null, null, null, null, Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<OptimizerStatsUsageEntry>(), Array.Empty<MissingIndexEntry>(), Array.Empty<WaitStatEntry>(), Array.Empty<AccessedObjectEntry>());
+        var statement = new StatementPlan(
+            StatementId: "1",
+            StatementType: "StmtSimple",
+            StatementText: "SELECT * FROM dbo.NATION",
+            Summary: summary,
+            Nodes: new[] { CreateNode("0", 10m) },
+            Edges: Array.Empty<PlanEdge>(),
+            Warnings: Array.Empty<PlanWarning>(),
+            RootNodeIds: new[] { "0" });
+
+        var layout = graphLayoutService.CreateLayout(statement);
+
+        var statementNode = Assert.IsType<StatementGraphNodeLayout>(layout.StatementNode);
+        Assert.Equal("Statement", statementNode.PrimaryLabel);
+        Assert.Equal("SELECT * FROM dbo.NATION", statementNode.SecondaryLabel);
+    }
+
+    [Fact]
     public void TableProjection_PreservesOperatorHierarchy()
     {
         var document = parser.Parse(SamplePlanLoader.Load("nested-loops-2022.sqlplan"));
@@ -137,6 +186,40 @@ public sealed class PlanProjectionTests
     }
 
     [Fact]
+    public void Parser_ReadsStatementTypeAttribute()
+    {
+        const string xml = """
+            <ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2022/ShowPlan" Version="1.2" Build="16.0.1000.6">
+              <BatchSequence>
+                <Batch>
+                  <Statements>
+                    <StmtSimple StatementId="1" StatementType="SELECT" StatementText="SELECT 1" StatementSubTreeCost="0.1" StatementEstRows="1">
+                      <StatementSetOptions QUOTED_IDENTIFIER="true" ANSI_NULLS="true" />
+                      <QueryPlan CachedPlanSize="32">
+                        <MemoryGrantInfo GrantedMemory="128" MaxUsedMemory="96" />
+                        <RelOp NodeId="0" PhysicalOp="Constant Scan" LogicalOp="Constant Scan" EstimateRows="1" EstimateCPU="0.001" EstimateIO="0" AvgRowSize="8" EstimatedTotalSubtreeCost="0.1" />
+                      </QueryPlan>
+                    </StmtSimple>
+                  </Statements>
+                </Batch>
+              </BatchSequence>
+            </ShowPlanXML>
+            """;
+
+        var document = parser.Parse(xml);
+        var statement = document.Statements[0];
+
+        Assert.Equal("StmtSimple", statement.StatementElementName);
+        Assert.Equal("SELECT", statement.StatementType);
+        Assert.Contains(statement.StatementProperties, property => property.Name == "StatementType" && property.Value == "SELECT");
+        Assert.Contains(statement.StatementProperties, property => property.Name == "StatementSubTreeCost" && property.Value == "0.1");
+        Assert.Contains(statement.StatementSetOptionsProperties, property => property.Name == "QUOTED_IDENTIFIER" && property.Value == "true");
+        Assert.Contains(statement.StatementSetOptionsProperties, property => property.Name == "ANSI_NULLS" && property.Value == "true");
+        Assert.Contains(statement.Summary.QueryPlanProperties, property => property.Name == "CachedPlanSize" && property.Value == "32");
+        Assert.Contains(statement.Summary.MemoryGrantInfoProperties, property => property.Name == "GrantedMemory" && property.Value == "128");
+    }
+
+    [Fact]
     public void Parser_ReadsActualExecutionModeIntoNodeProperties()
     {
         const string xml = """
@@ -195,6 +278,7 @@ public sealed class PlanProjectionTests
         Assert.Contains(node.XmlAttributes, item => item.Name == "RelOp.Filter.StartupExpression" && item.Value == "true");
         Assert.Contains(node.XmlAttributes, item => item.Name == "RelOp.Filter.Predicate.ScalarOperator.ScalarString" && item.Value == "[dbo].[T].[C]>(1)");
         Assert.DoesNotContain(node.XmlAttributes, item => item.Name == "RelOp.Filter.RelOp.NodeId");
+        Assert.DoesNotContain(node.DetailXmlAttributes, item => item.Name == "RelOp.Filter.RelOp.NodeId");
     }
 
     [Fact]
@@ -235,6 +319,10 @@ public sealed class PlanProjectionTests
         Assert.DoesNotContain(node.XmlAttributes, item => item.Name.StartsWith("RelOp.OutputList.ColumnReference", StringComparison.Ordinal));
         Assert.DoesNotContain(node.XmlAttributes, item => item.Name.Contains("ComputeScalar.DefinedValue", StringComparison.Ordinal));
         Assert.DoesNotContain(node.XmlAttributes, item => item.Name.Contains("ComputeScalar.DefinedValues.DefinedValue", StringComparison.Ordinal));
+        Assert.Contains(node.DetailXmlAttributes, item => item.Name == "RelOp.OutputList.ColumnReference.Table" && item.Value == "[T]");
+        Assert.Contains(node.DetailXmlAttributes, item => item.Name == "RelOp.OutputList.ColumnReference.Column" && item.Value == "Expr1001");
+        Assert.Contains(node.DetailXmlAttributes, item => item.Name == "RelOp.ComputeScalar.DefinedValues.DefinedValue.ColumnReference.Column" && item.Value == "Expr1001");
+        Assert.Contains(node.DetailXmlAttributes, item => item.Name == "RelOp.ComputeScalar.DefinedValues.DefinedValue.ScalarOperator.ScalarString" && item.Value == "[T].[A]+(1)");
     }
 
     [Fact]
@@ -449,6 +537,12 @@ public sealed class PlanProjectionTests
         Assert.DoesNotContain(nodes["8"].XmlAttributes, item => item.Name.StartsWith("RelOp.RunTimeInformation", StringComparison.Ordinal));
         Assert.DoesNotContain(nodes["9"].XmlAttributes, item => item.Name.StartsWith("RelOp.ComputeScalar.Values.ScalarExpressionList", StringComparison.Ordinal));
         Assert.Contains(nodes["9"].XmlAttributes, item => item.Name == "RelOp.ComputeScalar.ScalarString" && item.Value == "keep-me");
+        Assert.Contains(nodes["0"].DetailXmlAttributes, item => item.Name == "RelOp.Sort.OrderBy.OrderByColumn.ColumnReference.Column" && item.Value == "SortColumn");
+        Assert.Contains(nodes["3"].DetailXmlAttributes, item => item.Name == "RelOp.Hash.HashKeysBuild.ColumnReference.Column" && item.Value == "HashBuildColumn");
+        Assert.Contains(nodes["5"].DetailXmlAttributes, item => item.Name == "RelOp.IndexScan.Predicate.ScalarOperator.ScalarString" && item.Value == "[T].[A]=(1)");
+        Assert.Contains(nodes["5"].DetailXmlAttributes, item => item.Name == "RelOp.IndexScan.SeekPredicateNew.SeekKeys.Prefix.ScanType" && item.Value == "EQ");
+        Assert.Contains(nodes["8"].DetailXmlAttributes, item => item.Name == "RelOp.RunTimeInformation.RunTimeCountersPerThread.ActualRows" && item.Value == "1");
+        Assert.Contains(nodes["9"].DetailXmlAttributes, item => item.Name == "RelOp.ComputeScalar.Values.ScalarExpressionList.ScalarOperator.ScalarString" && item.Value == "[T].[Expr1002]+(1)");
     }
 
     [Fact]
@@ -854,5 +948,6 @@ public sealed class PlanProjectionTests
             RuntimeMetrics: new PlanRuntimeMetrics(null, null, null, null, null, null, null, null),
             Warnings: Array.Empty<PlanWarning>(),
             Properties: Array.Empty<PlanProperty>(),
-            XmlAttributes: Array.Empty<PlanProperty>());
+            XmlAttributes: Array.Empty<PlanProperty>(),
+            DetailXmlAttributes: Array.Empty<PlanProperty>());
 }

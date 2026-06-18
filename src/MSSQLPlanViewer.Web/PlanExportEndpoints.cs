@@ -87,7 +87,9 @@ internal static class PlanExportEndpoints
             return error;
         }
 
-        var layout = layoutService.CreateLayout(resolved!.Statement);
+        var layout = layoutService.CreateLayout(
+            resolved!.Statement,
+            CalculateStatementCostRatio(resolved.Document, resolved.Statement));
         var svg = svgRenderer.Render(
             layout,
             new GraphRenderOptions(request?.CostHighlightThresholdPercent ?? 20, request?.ShowCriticalPath ?? true));
@@ -167,6 +169,17 @@ internal static class PlanExportEndpoints
             Title = title,
             Detail = detail
         });
+
+    private static decimal? CalculateStatementCostRatio(ShowplanDocument document, StatementPlan statement)
+    {
+        var totalCost = document.Statements.Sum(item => item.Summary.EstimatedSubtreeCost ?? 0);
+        if (totalCost <= 0)
+        {
+            return null;
+        }
+
+        return (statement.Summary.EstimatedSubtreeCost ?? 0) / totalCost;
+    }
 
     private static bool TryResolveTableFormat(string? format, out string resolvedFormat, out IResult? error) =>
         TryResolveFormat(

@@ -105,6 +105,21 @@ public partial class Home
         }
     }
 
+    private bool IsStatementDetailsSelected
+    {
+        get => ActivePlan?.IsStatementDetailsSelected == true;
+        set
+        {
+            if (ActivePlan is not null)
+            {
+                ActivePlan.IsStatementDetailsSelected = value;
+            }
+        }
+    }
+
+    private string? SelectedStatementDetailId =>
+        IsStatementDetailsSelected ? SelectedStatementId : null;
+
     private StatementGraphLayout? SelectedLayout
     {
         get => ActivePlan?.SelectedLayout;
@@ -661,6 +676,7 @@ public partial class Home
     {
         HoveredNodeId = null;
         SelectedNodeId = null;
+        IsStatementDetailsSelected = false;
     }
 
     private void OnStatementChanged(ChangeEventArgs args)
@@ -691,20 +707,46 @@ public partial class Home
         }
 
         plan.SelectedStatementId = statement.StatementId;
-        plan.SelectedLayout = GraphLayoutService.CreateLayout(statement);
+        plan.SelectedLayout = GraphLayoutService.CreateLayout(statement, CalculateStatementCostRatio(plan.Document, statement));
         plan.CurrentRows = TableProjector.Project(statement);
         plan.SelectedNodeId = null;
         plan.HoveredNodeId = null;
+        plan.IsStatementDetailsSelected = false;
+    }
+
+    private static decimal? CalculateStatementCostRatio(ShowplanDocument document, StatementPlan statement)
+    {
+        var totalCost = document.Statements.Sum(item => item.Summary.EstimatedSubtreeCost ?? 0);
+        if (totalCost <= 0)
+        {
+            return null;
+        }
+
+        return (statement.Summary.EstimatedSubtreeCost ?? 0) / totalCost;
     }
 
     private void HandleGraphNodeSelected(string nodeId)
     {
+        IsStatementDetailsSelected = false;
         SelectedNodeId = nodeId;
         TableFocusRequestVersion++;
     }
 
+    private void HandleGraphStatementSelected(string statementId)
+    {
+        if (!string.Equals(SelectedStatementId, statementId, StringComparison.Ordinal))
+        {
+            SelectStatement(statementId);
+        }
+
+        HoveredNodeId = null;
+        SelectedNodeId = null;
+        IsStatementDetailsSelected = true;
+    }
+
     private void HandleTableNodeSelected(string nodeId)
     {
+        IsStatementDetailsSelected = false;
         SelectedNodeId = nodeId;
     }
 
