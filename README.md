@@ -20,7 +20,7 @@ MSSQL Plan Viewer is a Blazor web application that parses SQL Server **Showplan 
   - **SVG / PNG** download
 - **Table view**
   - Hierarchical operator list
-  - **CSV / Markdown** download and CSV copy
+  - **CSV / Markdown / JSON** download and CSV copy
 - **Diagnostics**
   - Cardinality estimate skew
   - TempDB spills
@@ -48,6 +48,7 @@ MSSQL Plan Viewer is a Blazor web application that parses SQL Server **Showplan 
   - Accepts `showplanXml` in the request body and returns downloadable files
   - `POST /api/exports/table?format=csv`
   - `POST /api/exports/table?format=md`
+  - `POST /api/exports/table?format=json`
   - `POST /api/exports/graph?format=svg`
   - `POST /api/exports/graph?format=png`
 - **Estimated Showplan API**
@@ -138,7 +139,7 @@ git push origin v0.1.0
 4. If a plan contains multiple statements, choose the active statement from the statement selector.
 5. Inspect the **Graphical plan**, **Table view**, **Diagnostics**, **Plan details**, and **Operator details** panes.
 6. Select an operator in the graph, table, or Diagnostics table to synchronize the focused node and details panel.
-7. Use **Download CSV**, **Download Markdown**, or **Copy** in Table view to export tabular data.
+7. Use **Download CSV**, **Download Markdown**, **Download JSON**, or **Copy** in Table view to export tabular data.
 8. Use **Export SVG** or **Export PNG** in Graphical plan to export the current graph.
 9. Load two or more plans to compare aggregate metrics with **Compare plans**.
 
@@ -168,6 +169,7 @@ See `docs\TEST_REPORT.md` for the test report.
 
 - `POST /api/exports/table?format=csv`
 - `POST /api/exports/table?format=md`
+- `POST /api/exports/table?format=json`
 
 Request body:
 
@@ -215,6 +217,7 @@ Supported endpoints:
 | --- | --- | --- | --- |
 | `/api/exports/table` | `format=csv` | `text/csv` | CSV table export |
 | `/api/exports/table` | `format=md` or `format=markdown` | `text/markdown` | Markdown table export |
+| `/api/exports/table` | `format=json` | `application/json` | JSON table export |
 | `/api/exports/graph` | `format=svg` | `image/svg+xml` | SVG graph export |
 | `/api/exports/graph` | `format=png` | `image/png` | PNG graph export |
 
@@ -418,6 +421,17 @@ Invoke-WebRequest `
     -OutFile .\plan-table.md
 ```
 
+Export the table view as JSON:
+
+```powershell
+Invoke-WebRequest `
+    -Uri "$baseUrl/api/exports/table?format=json" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body $body `
+    -OutFile .\plan-table.json
+```
+
 Export the graphical plan as SVG:
 
 ```powershell
@@ -458,7 +472,7 @@ curl.exe -X POST "http://localhost:5293/api/exports/graph?format=svg" `
 
 ## Verify the API with PowerShell
 
-`scripts\Test-PlanExportApi.ps1` calls all four endpoints and saves the returned files.
+`scripts\Test-PlanExportApi.ps1` calls all five endpoints and saves the returned files.
 
 ```powershell
 pwsh -File .\scripts\Test-PlanExportApi.ps1

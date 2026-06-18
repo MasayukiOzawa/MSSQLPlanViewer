@@ -95,6 +95,7 @@ $requestBody = $request | ConvertTo-Json -Depth 5 -Compress
 $results = @(
     Invoke-ExportRequest -Endpoint "/api/exports/table?format=csv" -FallbackName "plan-table.csv"
     Invoke-ExportRequest -Endpoint "/api/exports/table?format=md" -FallbackName "plan-table.md"
+    Invoke-ExportRequest -Endpoint "/api/exports/table?format=json" -FallbackName "plan-table.json"
     Invoke-ExportRequest -Endpoint "/api/exports/graph?format=svg" -FallbackName "plan-graph.svg"
     Invoke-ExportRequest -Endpoint "/api/exports/graph?format=png" -FallbackName "plan-graph.png"
 )

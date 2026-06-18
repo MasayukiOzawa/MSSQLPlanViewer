@@ -18,6 +18,7 @@ internal static class PlanExportEndpoints
             .Accepts<TableExportRequest>("application/json")
             .Produces(StatusCodes.Status200OK, contentType: "text/csv")
             .Produces(StatusCodes.Status200OK, contentType: "text/markdown")
+            .Produces(StatusCodes.Status200OK, contentType: "application/json")
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
@@ -59,6 +60,10 @@ internal static class PlanExportEndpoints
                 PlanTableMarkdownExporter.ToMarkdown(rows),
                 "text/markdown",
                 PlanFileNameBuilder.BuildFileName("plan-table", resolved.Statement.StatementId, "md", "plan-table")),
+            "json" => CreateTextFileResult(
+                PlanTableJsonExporter.ToJson(rows),
+                "application/json",
+                PlanFileNameBuilder.BuildFileName("plan-table", resolved.Statement.StatementId, "json", "plan-table")),
             _ => throw new InvalidOperationException($"Unsupported table export format '{resolvedFormat}'.")
         };
     }
@@ -170,9 +175,10 @@ internal static class PlanExportEndpoints
             {
                 ["csv"] = "csv",
                 ["md"] = "md",
-                ["markdown"] = "md"
+                ["markdown"] = "md",
+                ["json"] = "json"
             },
-            "csv, md",
+            "csv, md, markdown, json",
             out resolvedFormat,
             out error);
 
