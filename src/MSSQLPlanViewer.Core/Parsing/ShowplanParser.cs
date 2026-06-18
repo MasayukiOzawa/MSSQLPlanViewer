@@ -130,10 +130,11 @@ public sealed class ShowplanParser : IShowplanParser
                 ParseRelOp(rootRelOp, nodes, edges, parentNodeId: null);
             }
 
+            var statementElementName = statementElement.Name.LocalName;
             statements.Add(
                 new StatementPlan(
                     StatementId: GetAttribute(statementElement, "StatementId") ?? statements.Count.ToString(CultureInfo.InvariantCulture),
-                    StatementType: statementElement.Name.LocalName,
+                    StatementType: GetAttribute(statementElement, "StatementType") ?? statementElementName,
                     StatementText: GetAttribute(statementElement, "StatementText") ?? "(statement text unavailable)",
                     Summary: ParseStatementSummary(statementElement, queryPlan, BuildAccessedObjectEntries(rootRelOps)),
                     Nodes: nodes,
@@ -144,7 +145,13 @@ public sealed class ShowplanParser : IShowplanParser
                         .Where(nodeId => !string.IsNullOrWhiteSpace(nodeId))
                         .Cast<string>()
                         .Distinct(StringComparer.Ordinal)
-                        .ToArray()));
+                        .ToArray())
+                {
+                    StatementElementName = statementElementName,
+                    StatementProperties = BuildAttributeProperties(statementElement),
+                    StatementSetOptionsProperties = BuildAttributeProperties(
+                        statementElement.Elements().FirstOrDefault(element => HasLocalName(element, "StatementSetOptions")))
+                });
         }
 
         return statements;
@@ -180,7 +187,8 @@ public sealed class ShowplanParser : IShowplanParser
             RuntimeMetrics: runtimeMetrics,
             Warnings: warnings,
             Properties: BuildProperties(relOpElement, physicalOp, logicalOp, objectReference, runtimeMetrics, warnings),
-            XmlAttributes: BuildXmlAttributeProperties(relOpElement));
+            XmlAttributes: BuildXmlAttributeProperties(relOpElement, excludeConfiguredSubtrees: true),
+            DetailXmlAttributes: BuildXmlAttributeProperties(relOpElement, excludeConfiguredSubtrees: false));
 
         nodes.Add(node);
 
@@ -642,7 +650,9 @@ public sealed class ShowplanParser : IShowplanParser
         }
     }
 
-    private static IReadOnlyList<PlanProperty> BuildXmlAttributeProperties(XElement relOpElement)
+    private static IReadOnlyList<PlanProperty> BuildXmlAttributeProperties(
+        XElement relOpElement,
+        bool excludeConfiguredSubtrees)
     {
         var properties = new List<PlanProperty>();
         TraverseOwnedElements(relOpElement, relOpElement.Name.LocalName);
@@ -650,7 +660,7 @@ public sealed class ShowplanParser : IShowplanParser
 
         void TraverseOwnedElements(XElement element, string path)
         {
-            if (ShouldExcludeXmlAttributePath(path))
+            if (excludeConfiguredSubtrees && ShouldExcludeXmlAttributePath(path))
             {
                 return;
             }

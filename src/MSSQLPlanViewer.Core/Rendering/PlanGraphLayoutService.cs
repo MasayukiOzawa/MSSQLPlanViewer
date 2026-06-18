@@ -7,15 +7,24 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
 {
     private const double NodeWidth = 252;
     private const double NodeHeight = 96;
+    private const double StatementNodeWidth = 252;
+    private const double StatementNodeHeight = 88;
     private const double HorizontalSpacing = 56;
     private const double VerticalSpacing = 28;
     private const double Margin = 24;
 
-    public StatementGraphLayout CreateLayout(StatementPlan statement)
+    public StatementGraphLayout CreateLayout(StatementPlan statement, decimal? statementCostRatio = null)
     {
         if (statement.Nodes.Count == 0)
         {
-            return new StatementGraphLayout(statement.StatementId, 0, 0, Array.Empty<GraphNodeLayout>(), Array.Empty<GraphEdgeLayout>());
+            return new StatementGraphLayout(
+                statement.StatementId,
+                StatementNode: null,
+                Width: 0,
+                Height: 0,
+                Nodes: Array.Empty<GraphNodeLayout>(),
+                StatementEdges: Array.Empty<GraphEdgeLayout>(),
+                Edges: Array.Empty<GraphEdgeLayout>());
         }
 
         var nodesById = statement.Nodes.ToDictionary(node => node.NodeId, StringComparer.Ordinal);
@@ -77,6 +86,23 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
             })
             .ToArray();
 
+        var statementNode = BuildStatementNode(statement, nodeLayouts, maxCost, statementCostRatio);
+        var statementEdges = rootNodeIds
+            .Where(rootNodeId => nodesById.ContainsKey(rootNodeId))
+            .Distinct(StringComparer.Ordinal)
+            .Select(rootNodeId => nodeLayouts.FirstOrDefault(node => string.Equals(node.NodeId, rootNodeId, StringComparison.Ordinal)))
+            .Where(node => node is not null)
+            .Cast<GraphNodeLayout>()
+            .Select(node => new GraphEdgeLayout(
+                FromNodeId: statementNode.StatementId,
+                ToNodeId: node.NodeId,
+                X1: statementNode.X + (statementNode.Width / 2),
+                Y1: statementNode.Y + statementNode.Height,
+                X2: node.X + (node.Width / 2),
+                Y2: node.Y,
+                IsOnCriticalPath: false))
+            .ToArray();
+
         var edgeLayouts = statement.Edges
             .Where(edge => positions.ContainsKey(edge.FromNodeId) && positions.ContainsKey(edge.ToNodeId))
             .Select(edge =>
@@ -95,10 +121,10 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
             })
             .ToArray();
 
-        var width = nodeLayouts.Max(node => node.X + node.Width) + Margin;
+        var width = Math.Max(statementNode.X + statementNode.Width, nodeLayouts.Max(node => node.X + node.Width)) + Margin;
         var height = nodeLayouts.Max(node => node.Y + node.Height) + Margin;
 
-        return new StatementGraphLayout(statement.StatementId, width, height, nodeLayouts, edgeLayouts);
+        return new StatementGraphLayout(statement.StatementId, statementNode, width, height, nodeLayouts, statementEdges, edgeLayouts);
     }
 
     /// <summary>
@@ -195,14 +221,14 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
         if (!stack.Add(nodeId))
         {
             var fallbackX = Margin + (assignedColumn * (NodeWidth + HorizontalSpacing));
-            var fallbackY = Margin + (depth * (NodeHeight + VerticalSpacing));
+            var fallbackY = Margin + StatementNodeHeight + VerticalSpacing + (depth * (NodeHeight + VerticalSpacing));
             positions[nodeId] = (fallbackX, fallbackY);
             nextAvailableColumnByDepth[depth] = assignedColumn + 1;
             return assignedColumn;
         }
 
         var currentX = Margin + (assignedColumn * (NodeWidth + HorizontalSpacing));
-        var currentY = Margin + (depth * (NodeHeight + VerticalSpacing));
+        var currentY = Margin + StatementNodeHeight + VerticalSpacing + (depth * (NodeHeight + VerticalSpacing));
         positions[nodeId] = (currentX, currentY);
         nextAvailableColumnByDepth[depth] = assignedColumn + 1;
 
@@ -223,5 +249,66 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
 
         stack.Remove(nodeId);
         return assignedColumn;
+    }
+
+    private static StatementGraphNodeLayout BuildStatementNode(
+        StatementPlan statement,
+        IReadOnlyList<GraphNodeLayout> nodeLayouts,
+        decimal maxCost,
+        decimal? statementCostRatio)
+    {
+        var minRootY = nodeLayouts.Min(node => node.Y);
+        var topNodes = nodeLayouts
+            .Where(node => Math.Abs(node.Y - minRootY) < 0.001d)
+            .ToArray();
+        var left = topNodes.Min(node => node.X);
+        var right = topNodes.Max(node => node.X + node.Width);
+        var centerX = left + ((right - left) / 2);
+        var x = Math.Max(Margin, centerX - (StatementNodeWidth / 2));
+
+        var primaryLabel = BuildStatementPrimaryLabel(statement);
+        var hasStatementCost = (statement.Summary.EstimatedSubtreeCost ?? maxCost) > 0;
+        var costRatio = statementCostRatio.HasValue
+            ? ClampCostRatio(statementCostRatio.Value)
+            : hasStatementCost ? 1m : 0m;
+
+        return new StatementGraphNodeLayout(
+            StatementId: statement.StatementId,
+            StatementType: statement.StatementType,
+            StatementText: statement.StatementText,
+            PrimaryLabel: primaryLabel,
+            SecondaryLabel: string.IsNullOrWhiteSpace(statement.StatementText) ? $"Statement #{statement.StatementId}" : statement.StatementText,
+            X: x,
+            Y: Margin,
+            Width: StatementNodeWidth,
+            Height: StatementNodeHeight,
+            CostRatio: costRatio);
+    }
+
+    private static string BuildStatementPrimaryLabel(StatementPlan statement)
+    {
+        if (string.IsNullOrWhiteSpace(statement.StatementType))
+        {
+            return "Statement";
+        }
+
+        if (statement.StatementType.StartsWith("Stmt", StringComparison.OrdinalIgnoreCase)
+            && statement.StatementType.Length > 4)
+        {
+            var suffix = statement.StatementType[4..];
+            return suffix.Equals("Simple", StringComparison.OrdinalIgnoreCase) ? "Statement" : suffix;
+        }
+
+        return statement.StatementType;
+    }
+
+    private static decimal ClampCostRatio(decimal value)
+    {
+        if (value <= 0)
+        {
+            return 0;
+        }
+
+        return value >= 1 ? 1 : value;
     }
 }

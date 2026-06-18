@@ -42,6 +42,7 @@ internal static class TestPlanFactory
         double? estimatedRows = null,
         IReadOnlyList<PlanProperty>? properties = null,
         IReadOnlyList<PlanProperty>? xmlAttributes = null,
+        IReadOnlyList<PlanProperty>? detailXmlAttributes = null,
         params PlanWarning[] warnings) =>
         new(
             NodeId: nodeId,
@@ -57,7 +58,8 @@ internal static class TestPlanFactory
             RuntimeMetrics: runtimeMetrics ?? NoMetrics,
             Warnings: warnings.Length == 0 ? Array.Empty<PlanWarning>() : warnings,
             Properties: properties ?? Array.Empty<PlanProperty>(),
-            XmlAttributes: xmlAttributes ?? Array.Empty<PlanProperty>());
+            XmlAttributes: xmlAttributes ?? Array.Empty<PlanProperty>(),
+            DetailXmlAttributes: detailXmlAttributes ?? Array.Empty<PlanProperty>());
 
     public static PlanEdge Edge(string fromNodeId, string toNodeId) =>
         new(fromNodeId, toNodeId);

@@ -40,6 +40,24 @@ public sealed class PlanDisplayFormatterTests
     public void FormatNumber_SelectsPrecisionByMagnitude(double value, string expected) =>
         Assert.Equal(expected, PlanDisplayFormatter.FormatNumber(value));
 
+    [Theory]
+    [InlineData("1000", "1,000")]
+    [InlineData("102400", "102,400")]
+    [InlineData("-1500", "-1,500")]
+    [InlineData("1234.567800", "1,234.567800")]
+    [InlineData("250.50", "250.50")]
+    [InlineData("1.2E+6", "1,200,000")]
+    public void FormatNumericText_GroupsNumericStrings(string value, string expected) =>
+        Assert.Equal(expected, PlanDisplayFormatter.FormatNumericText(value));
+
+    [Theory]
+    [InlineData("[dbo].[T].[C]>(1)")]
+    [InlineData("2026-05-01T10:15:30")]
+    [InlineData("Row")]
+    [InlineData("")]
+    public void FormatNumericText_LeavesNonNumericStringsUnchanged(string value) =>
+        Assert.Equal(value, PlanDisplayFormatter.FormatNumericText(value));
+
     [Fact]
     public void FormatObjectName_ReturnsNotAvailableForNull() =>
         Assert.Equal("n/a", PlanDisplayFormatter.FormatObjectName(null));

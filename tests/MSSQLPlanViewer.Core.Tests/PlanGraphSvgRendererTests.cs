@@ -10,10 +10,23 @@ public sealed class PlanGraphSvgRendererTests
     [Fact]
     public void Render_ProducesValidInlineSvgWithEscapedLabels()
     {
+        var statementNode = new StatementGraphNodeLayout(
+            "stmt<1>",
+            "SELECT",
+            "SELECT <value> FROM dbo.[T&1]",
+            "SELECT",
+            "SELECT <value> FROM dbo.[T&1]",
+            16,
+            16,
+            240,
+            88,
+            1m);
+
         var layout = new StatementGraphLayout(
             "stmt<1>",
+            statementNode,
             360,
-            220,
+            280,
             new[]
             {
                 new GraphNodeLayout(
@@ -24,7 +37,7 @@ public sealed class PlanGraphSvgRendererTests
                     "Seek <Expr>",
                     "dbo.[T&1] > @p",
                     16,
-                    16,
+                    132,
                     240,
                     92,
                     0.72m,
@@ -33,15 +46,23 @@ public sealed class PlanGraphSvgRendererTests
             },
             new[]
             {
-                new GraphEdgeLayout("0", "1", 120, 0, 120, 16, IsOnCriticalPath: true)
+                new GraphEdgeLayout("stmt<1>", "1", 136, 104, 136, 132, IsOnCriticalPath: false)
+            },
+            new[]
+            {
+                new GraphEdgeLayout("0", "1", 120, 100, 120, 132, IsOnCriticalPath: true)
             });
 
         var svg = _renderer.Render(layout, new GraphRenderOptions(20, true));
 
         XDocument.Parse(svg);
+        Assert.Contains("data-statement-id=\"stmt&lt;1&gt;\"", svg);
+        Assert.Contains("SELECT &lt;value&gt; FROM dbo.[T&amp;1]", svg);
+        Assert.Contains("Query cost 100%", svg);
         Assert.Contains("Seek &lt;Expr&gt;", svg);
         Assert.Contains("dbo.[T&amp;1] &gt; @p", svg);
         Assert.Contains("url(#arrow-critical)", svg);
+        Assert.Contains("stroke-dasharray=\"4 4\"", svg);
         Assert.Contains("stroke-dasharray=\"5 4\"", svg);
         Assert.DoesNotContain("class=", svg, StringComparison.Ordinal);
     }
@@ -50,10 +71,11 @@ public sealed class PlanGraphSvgRendererTests
     public void Render_DisablesCriticalPathAndThresholdWhenRequested()
     {
         var layout = new StatementGraphLayout(
-            "stmt2",
-            360,
-            220,
-            new[]
+            StatementId: "stmt2",
+            StatementNode: null,
+            Width: 360,
+            Height: 220,
+            Nodes: new[]
             {
                 new GraphNodeLayout(
                     "2",
@@ -70,7 +92,8 @@ public sealed class PlanGraphSvgRendererTests
                     HasWarnings: true,
                     IsOnCriticalPath: true)
             },
-            new[]
+            StatementEdges: Array.Empty<GraphEdgeLayout>(),
+            Edges: new[]
             {
                 new GraphEdgeLayout("0", "2", 120, 0, 120, 16, IsOnCriticalPath: true)
             });

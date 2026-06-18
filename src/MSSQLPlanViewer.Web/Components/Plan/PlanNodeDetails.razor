@@ -5,10 +5,49 @@
 else if (Node is null)
 {
     <div class="details-shell">
-        <div>
-            <div class="details-label">Statement</div>
-            <h3>#@Statement.StatementId - @Statement.StatementType</h3>
+        <div class="details-heading">
+            <div>
+                <div class="details-label">Statement</div>
+                <h3>@Statement.StatementType</h3>
+                <p class="details-subtitle">@GetStatementElementLabel(Statement) #@Statement.StatementId</p>
+            </div>
         </div>
+
+        @{
+            var visibleStatementProperties = GetVisibleStatementProperties(Statement);
+        }
+
+        @if (visibleStatementProperties.Count > 0)
+        {
+            <div class="xml-attributes-section">
+                <div class="details-label">@GetStatementElementLabel(Statement) attributes (@FormatCount(visibleStatementProperties.Count))</div>
+                @RenderXmlAttributesTable(visibleStatementProperties)
+            </div>
+        }
+
+        @if (Statement.StatementSetOptionsProperties.Count > 0)
+        {
+            <div class="xml-attributes-section">
+                <div class="details-label">StatementSetOptions attributes (@FormatCount(Statement.StatementSetOptionsProperties.Count))</div>
+                @RenderXmlAttributesTable(Statement.StatementSetOptionsProperties)
+            </div>
+        }
+
+        @if (Statement.Summary.QueryPlanProperties.Count > 0)
+        {
+            <div class="xml-attributes-section">
+                <div class="details-label">QueryPlan attributes (@FormatCount(Statement.Summary.QueryPlanProperties.Count))</div>
+                @RenderXmlAttributesTable(Statement.Summary.QueryPlanProperties)
+            </div>
+        }
+
+        @if (Statement.Summary.MemoryGrantInfoProperties.Count > 0)
+        {
+            <div class="xml-attributes-section">
+                <div class="details-label">MemoryGrantInfo attributes (@FormatCount(Statement.Summary.MemoryGrantInfoProperties.Count))</div>
+                @RenderXmlAttributesTable(Statement.Summary.MemoryGrantInfoProperties)
+            </div>
+        }
 
         @if (Statement.Warnings.Count > 0)
         {
@@ -22,20 +61,23 @@ else if (Node is null)
                 </div>
             </div>
         }
-
-        <div>
-            <div class="details-label">Statement text</div>
-            <pre class="details-code">@Statement.StatementText</pre>
-        </div>
     </div>
 }
 else
 {
     <div class="details-shell">
-        <div>
-            <div class="details-label">Operator</div>
-            <h3>@Node.PhysicalOp</h3>
-            <p class="details-subtitle">@Node.LogicalOp</p>
+        <div class="details-heading">
+            <div>
+                <div class="details-label">Operator</div>
+                <h3>@Node.PhysicalOp</h3>
+                <p class="details-subtitle">@Node.LogicalOp</p>
+            </div>
+            @if (Node.DetailXmlAttributes.Count > 0)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm details-toggle" @onclick="ToggleDetail">
+                    @(showDetail ? "Hide detail" : "Detail")
+                </button>
+            }
         </div>
 
         <dl class="details-list">
@@ -43,7 +85,7 @@ else
             {
                 <div class="details-row">
                     <dt>@property.Name</dt>
-                    <dd>@property.Value</dd>
+                    <dd>@FormatDetailsValue(property.Value)</dd>
                 </div>
             }
         </dl>
@@ -51,26 +93,16 @@ else
         @if (Node.XmlAttributes.Count > 0)
         {
             <div class="xml-attributes-section">
-                <div class="details-label">XML attributes</div>
-                <div class="details-table-shell">
-                    <table class="table table-sm align-middle details-table xml-attributes-table">
-                        <thead>
-                            <tr>
-                                <th scope="col">Attribute</th>
-                                <th scope="col">Value</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var xmlAttribute in Node.XmlAttributes)
-                            {
-                                <tr>
-                                    <td class="xml-attribute-name">@xmlAttribute.Name</td>
-                                    <td class="xml-attribute-value">@xmlAttribute.Value</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                <div class="details-label">XML attributes (@FormatCount(Node.XmlAttributes.Count))</div>
+                @RenderXmlAttributesTable(Node.XmlAttributes)
+            </div>
+        }
+
+        @if (showDetail && Node.DetailXmlAttributes.Count > 0)
+        {
+            <div class="xml-attributes-section detail-xml-attributes-section">
+                <div class="details-label">All XML attributes (@FormatCount(Node.DetailXmlAttributes.Count))</div>
+                @RenderXmlAttributesTable(Node.DetailXmlAttributes)
             </div>
         }
 
@@ -154,6 +186,54 @@ else
     [Parameter]
     public PlanNode? Node { get; set; }
 
+    private bool showDetail;
+
+    private string? previousNodeId;
+
+    protected override void OnParametersSet()
+    {
+        var currentNodeId = Node?.NodeId;
+        if (!string.Equals(previousNodeId, currentNodeId, StringComparison.Ordinal))
+        {
+            previousNodeId = currentNodeId;
+            showDetail = false;
+        }
+    }
+
+    private void ToggleDetail() =>
+        showDetail = !showDetail;
+
+    private static string FormatCount(int count) =>
+        count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string GetStatementElementLabel(StatementPlan statement) =>
+        string.IsNullOrWhiteSpace(statement.StatementElementName) ? "Statement" : statement.StatementElementName;
+
+    private static IReadOnlyList<PlanProperty> GetVisibleStatementProperties(StatementPlan statement) =>
+        statement.StatementProperties
+            .Where(property => !string.Equals(property.Name, "StatementText", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+    private static RenderFragment RenderXmlAttributesTable(IReadOnlyList<PlanProperty> xmlAttributes) => @<div class="details-table-shell">
+        <table class="table table-sm align-middle details-table xml-attributes-table">
+            <thead>
+                <tr>
+                    <th scope="col">Attribute</th>
+                    <th scope="col">Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var xmlAttribute in xmlAttributes)
+                {
+                    <tr>
+                        <td class="xml-attribute-name">@xmlAttribute.Name</td>
+                        <td class="xml-attribute-value">@FormatDetailsValue(xmlAttribute.Value)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>;
+
     private static string FormatThreadId(int threadId) =>
         threadId == 0
             ? "0 (coordinator)"
@@ -161,4 +241,7 @@ else
 
     private static string FormatNumber(double? value) =>
         PlanDisplayFormatter.FormatNumber(value);
+
+    private static string FormatDetailsValue(string value) =>
+        PlanDisplayFormatter.FormatNumericText(value);
 }

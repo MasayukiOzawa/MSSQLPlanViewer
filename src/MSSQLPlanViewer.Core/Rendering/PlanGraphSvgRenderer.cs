@@ -42,9 +42,19 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
                 new XAttribute("height", Format(height)),
                 new XAttribute("fill", "#ffffff")));
 
+        foreach (var edge in layout.StatementEdges)
+        {
+            root.Add(BuildEdge(ns, edge, options, isDashed: true));
+        }
+
         foreach (var edge in layout.Edges)
         {
             root.Add(BuildEdge(ns, edge, options));
+        }
+
+        if (layout.StatementNode is not null)
+        {
+            root.Add(BuildStatementNode(ns, layout.StatementNode));
         }
 
         foreach (var node in layout.Nodes)
@@ -75,16 +85,23 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
                 new XAttribute("d", "M 0 0 L 10 5 L 0 10 z"),
                 new XAttribute("fill", fill)));
 
-    private static XElement BuildEdge(XNamespace ns, GraphEdgeLayout edge, GraphRenderOptions options)
+    private static XElement BuildEdge(XNamespace ns, GraphEdgeLayout edge, GraphRenderOptions options, bool isDashed = false)
     {
         var isCritical = options.ShowCriticalPath && edge.IsOnCriticalPath;
-        return new XElement(
+        var element = new XElement(
             ns + "path",
             new XAttribute("d", BuildEdgePath(edge)),
             new XAttribute("fill", "none"),
             new XAttribute("stroke", isCritical ? "#7c3aed" : "#94a3b8"),
             new XAttribute("stroke-width", isCritical ? "3.4" : "2.2"),
             new XAttribute("marker-end", isCritical ? "url(#arrow-critical)" : "url(#arrow)"));
+
+        if (isDashed)
+        {
+            element.SetAttributeValue("stroke-dasharray", "4 4");
+        }
+
+        return element;
     }
 
     private static XElement BuildNode(XNamespace ns, GraphNodeLayout node, GraphRenderOptions options)
@@ -240,6 +257,82 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
                 new XAttribute("ry", "2"),
                 new XAttribute("fill", accentFill)));
 
+        return group;
+    }
+
+    private static XElement BuildStatementNode(XNamespace ns, StatementGraphNodeLayout node)
+    {
+        var bodyX = node.X;
+        var bodyY = node.Y;
+        var iconTileX = bodyX + 16;
+        var iconTileY = bodyY + 16;
+        var contentX = bodyX + 66;
+        var contentY = bodyY + 28;
+        var accentFill = "#2563eb";
+
+        var group = new XElement(ns + "g", new XAttribute("data-statement-id", node.StatementId));
+        group.Add(new XElement(ns + "title", node.StatementText));
+        group.Add(
+            new XElement(
+                ns + "rect",
+                new XAttribute("x", Format(bodyX)),
+                new XAttribute("y", Format(bodyY)),
+                new XAttribute("width", Format(node.Width)),
+                new XAttribute("height", Format(node.Height)),
+                new XAttribute("rx", "18"),
+                new XAttribute("ry", "18"),
+                new XAttribute("fill", "#eff6ff"),
+                new XAttribute("stroke", "#93c5fd"),
+                new XAttribute("stroke-width", "2")));
+        group.Add(
+            new XElement(
+                ns + "rect",
+                new XAttribute("x", Format(bodyX)),
+                new XAttribute("y", Format(bodyY)),
+                new XAttribute("width", Format(node.Width)),
+                new XAttribute("height", "6"),
+                new XAttribute("rx", "18"),
+                new XAttribute("ry", "18"),
+                new XAttribute("fill", accentFill)));
+        group.Add(
+            new XElement(
+                ns + "rect",
+                new XAttribute("x", Format(iconTileX)),
+                new XAttribute("y", Format(iconTileY)),
+                new XAttribute("width", "34"),
+                new XAttribute("height", "34"),
+                new XAttribute("rx", "10"),
+                new XAttribute("ry", "10"),
+                new XAttribute("fill", "#dbeafe"),
+                new XAttribute("stroke", "#bfdbfe"),
+                new XAttribute("stroke-width", "1")));
+        group.Add(BuildStatementIcon(ns, iconTileX + 8, iconTileY + 8, accentFill));
+        group.Add(BuildText(ns, contentX, contentY, Trim(node.PrimaryLabel, 30), "14", "#0f172a", "700"));
+        group.Add(BuildText(ns, contentX, contentY + 21, Trim(node.SecondaryLabel, 30), "11.5", "#334155", "400"));
+        group.Add(BuildText(
+            ns,
+            contentX,
+            contentY + 42,
+            $"Statement {node.StatementId} | Query cost {PlanDisplayFormatter.FormatPercent(node.CostRatio)}",
+            "11",
+            "#64748b",
+            "400"));
+        return group;
+    }
+
+    private static XElement BuildStatementIcon(XNamespace ns, double x, double y, string accentFill)
+    {
+        var group = new XElement(
+            ns + "g",
+            new XAttribute("stroke", accentFill),
+            new XAttribute("fill", "none"),
+            new XAttribute("stroke-linecap", "round"),
+            new XAttribute("stroke-linejoin", "round"),
+            new XAttribute("stroke-width", "2"));
+        group.Add(Rect(ns, x, y, 20, 20, 3));
+        group.Add(Line(ns, x + 5, y + 6, x + 15, y + 6));
+        group.Add(Line(ns, x + 5, y + 10, x + 15, y + 10));
+        group.Add(Line(ns, x + 5, y + 14, x + 12, y + 14));
         return group;
     }
 

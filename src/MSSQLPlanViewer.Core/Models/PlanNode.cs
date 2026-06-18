@@ -14,7 +14,8 @@ public sealed record PlanNode(
     PlanRuntimeMetrics RuntimeMetrics,
     IReadOnlyList<PlanWarning> Warnings,
     IReadOnlyList<PlanProperty> Properties,
-    IReadOnlyList<PlanProperty> XmlAttributes)
+    IReadOnlyList<PlanProperty> XmlAttributes,
+    IReadOnlyList<PlanProperty> DetailXmlAttributes)
 {
     public bool HasWarnings => Warnings.Count > 0;
 }

@@ -189,5 +189,6 @@ public sealed class PlanComparisonServiceTests
             RuntimeMetrics: new PlanRuntimeMetrics(null, null, null, null, null, null, null, null),
             Warnings: Array.Empty<PlanWarning>(),
             Properties: Array.Empty<PlanProperty>(),
-            XmlAttributes: Array.Empty<PlanProperty>());
+            XmlAttributes: Array.Empty<PlanProperty>(),
+            DetailXmlAttributes: Array.Empty<PlanProperty>());
 }

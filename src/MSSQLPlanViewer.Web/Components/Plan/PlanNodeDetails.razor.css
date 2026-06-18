@@ -13,9 +13,25 @@
     margin-bottom: 0.25rem;
 }
 
+.details-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.details-heading > div {
+    min-width: 0;
+}
+
+.details-toggle {
+    flex: 0 0 auto;
+}
+
 .details-shell h3 {
     margin: 0;
     font-size: 1.05rem;
+    overflow-wrap: anywhere;
 }
 
 .details-subtitle {
@@ -62,6 +78,11 @@
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
+}
+
+.detail-xml-attributes-section {
+    border-top: 1px solid #e2e8f0;
+    padding-top: 0.55rem;
 }
 
 .details-table-shell {
