@@ -46,7 +46,7 @@ else
 
             @foreach (var edge in Layout.StatementEdges)
             {
-                <path d="@BuildEdgePath(edge)"
+                <path d="@BuildEdgePath(edge, Layout.Direction)"
                       class="graph-edge statement-edge"
                       marker-end="@($"url(#{MarkerId})")" />
             }
@@ -54,7 +54,7 @@ else
             @foreach (var edge in Layout.Edges)
             {
                 var isCriticalEdge = ShowCriticalPath && edge.IsOnCriticalPath;
-                <path d="@BuildEdgePath(edge)"
+                <path d="@BuildEdgePath(edge, Layout.Direction)"
                       class="@(isCriticalEdge ? "graph-edge critical-path" : "graph-edge")"
                       marker-end="@($"url(#{(isCriticalEdge ? CriticalMarkerId : MarkerId)})")" />
             }
@@ -224,8 +224,11 @@ else
                     <text x="@contentX" y="@(contentY + 21)" class="graph-subtitle">
                         @Trim(node.SecondaryLabel, 30)
                     </text>
-                    <text x="@contentX" y="@(contentY + 42)" class="graph-meta">
+                    <text x="@contentX" y="@(contentY + 40)" class="graph-meta">
                         Node @node.NodeId | Cost @PlanDisplayFormatter.FormatPercent(node.CostRatio)
+                    </text>
+                    <text x="@contentX" y="@(contentY + 56)" class="graph-meta graph-rows">
+                        @BuildRowsLabel(node)
                     </text>
                     <rect x="@(bodyX + 16)" y="@(bodyY + node.Height - 12)" width="@(node.Width - 32)" height="4" rx="2" ry="2" class="node-meter-track" />
                     <rect x="@(bodyX + 16)" y="@(bodyY + node.Height - 12)" width="@meterWidth" height="4" rx="2" ry="2" class="node-meter-fill" fill="@GetAccentFill(node, icon)" />
@@ -402,11 +405,23 @@ else
         resetViewportPending = true;
     }
 
-    private static string BuildEdgePath(GraphEdgeLayout edge)
+    private static string BuildEdgePath(GraphEdgeLayout edge, GraphLayoutDirection direction) =>
+        direction == GraphLayoutDirection.HorizontalSsms
+            ? BuildHorizontalEdgePath(edge)
+            : BuildVerticalEdgePath(edge);
+
+    private static string BuildVerticalEdgePath(GraphEdgeLayout edge)
     {
         var controlY1 = edge.Y1 + 36;
         var controlY2 = edge.Y2 - 36;
         return $"M {edge.X1} {edge.Y1} C {edge.X1} {controlY1}, {edge.X2} {controlY2}, {edge.X2} {edge.Y2}";
+    }
+
+    private static string BuildHorizontalEdgePath(GraphEdgeLayout edge)
+    {
+        var controlX1 = edge.X1 - 36;
+        var controlX2 = edge.X2 + 36;
+        return $"M {edge.X1} {edge.Y1} C {controlX1} {edge.Y1}, {controlX2} {edge.Y2}, {edge.X2} {edge.Y2}";
     }
 
     private string GetNodeClass(GraphNodeLayout node, bool isSelected, bool isScan, bool hasDashedOutline, bool isCriticalNode)
@@ -502,6 +517,9 @@ else
         icon.Kind is OperatorIconKind.Scan or OperatorIconKind.ConstantScan
         || node.PhysicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase)
         || node.LogicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildRowsLabel(GraphNodeLayout node) =>
+        $"Est rows {PlanDisplayFormatter.FormatNumber(node.EstimatedRows)} | Actual {PlanDisplayFormatter.FormatNumber(node.ActualRows)}";
 
     private static string Trim(string text, int maxLength) =>
         text.Length <= maxLength ? text : $"{text[..(maxLength - 1)]}…";

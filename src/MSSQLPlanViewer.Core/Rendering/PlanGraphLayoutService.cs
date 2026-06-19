@@ -6,14 +6,17 @@ namespace MSSQLPlanViewer.Core.Rendering;
 public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
 {
     private const double NodeWidth = 252;
-    private const double NodeHeight = 96;
+    private const double NodeHeight = 112;
     private const double StatementNodeWidth = 252;
     private const double StatementNodeHeight = 88;
     private const double HorizontalSpacing = 56;
     private const double VerticalSpacing = 28;
     private const double Margin = 24;
 
-    public StatementGraphLayout CreateLayout(StatementPlan statement, decimal? statementCostRatio = null)
+    public StatementGraphLayout CreateLayout(
+        StatementPlan statement,
+        decimal? statementCostRatio = null,
+        GraphLayoutDirection direction = GraphLayoutDirection.Vertical)
     {
         if (statement.Nodes.Count == 0)
         {
@@ -24,7 +27,8 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
                 Height: 0,
                 Nodes: Array.Empty<GraphNodeLayout>(),
                 StatementEdges: Array.Empty<GraphEdgeLayout>(),
-                Edges: Array.Empty<GraphEdgeLayout>());
+                Edges: Array.Empty<GraphEdgeLayout>(),
+                Direction: direction);
         }
 
         var nodesById = statement.Nodes.ToDictionary(node => node.NodeId, StringComparer.Ordinal);
@@ -42,22 +46,9 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
 
         var rootNodeIds = PlanTreeNavigator.ResolveRootNodeIds(statement, nodesById);
 
-        var positions = new Dictionary<string, (double X, double Y)>(StringComparer.Ordinal);
-        var nextAvailableColumnByDepth = new Dictionary<int, int>();
-
-        var nextColumn = 0;
-
-        foreach (var rootNodeId in rootNodeIds)
-        {
-            var assignedColumn = LayoutSubtree(rootNodeId, depth: 0, preferredColumn: nextColumn, childrenByParent, positions, nextAvailableColumnByDepth);
-            nextColumn = Math.Max(nextColumn, assignedColumn + 1);
-        }
-
-        foreach (var node in statement.Nodes.Where(node => !positions.ContainsKey(node.NodeId)))
-        {
-            var assignedColumn = LayoutSubtree(node.NodeId, depth: 0, preferredColumn: nextColumn, childrenByParent, positions, nextAvailableColumnByDepth);
-            nextColumn = Math.Max(nextColumn, assignedColumn + 1);
-        }
+        var positions = direction == GraphLayoutDirection.HorizontalSsms
+            ? BuildHorizontalPositions(statement, childrenByParent, rootNodeIds)
+            : BuildVerticalPositions(statement, childrenByParent, rootNodeIds);
 
         var maxCost = statement.Nodes.Max(node => node.EstimatedSubtreeCost ?? 0);
 
@@ -81,50 +72,21 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
                     Width: NodeWidth,
                     Height: NodeHeight,
                     CostRatio: maxCost <= 0 ? 0 : (node.EstimatedSubtreeCost ?? 0) / maxCost,
+                    EstimatedRows: node.EstimatedRows,
+                    ActualRows: node.RuntimeMetrics.ActualRows,
                     HasWarnings: node.HasWarnings,
                     IsOnCriticalPath: criticalPath.Nodes.Contains(node.NodeId));
             })
             .ToArray();
 
-        var statementNode = BuildStatementNode(statement, nodeLayouts, maxCost, statementCostRatio);
-        var statementEdges = rootNodeIds
-            .Where(rootNodeId => nodesById.ContainsKey(rootNodeId))
-            .Distinct(StringComparer.Ordinal)
-            .Select(rootNodeId => nodeLayouts.FirstOrDefault(node => string.Equals(node.NodeId, rootNodeId, StringComparison.Ordinal)))
-            .Where(node => node is not null)
-            .Cast<GraphNodeLayout>()
-            .Select(node => new GraphEdgeLayout(
-                FromNodeId: statementNode.StatementId,
-                ToNodeId: node.NodeId,
-                X1: statementNode.X + (statementNode.Width / 2),
-                Y1: statementNode.Y + statementNode.Height,
-                X2: node.X + (node.Width / 2),
-                Y2: node.Y,
-                IsOnCriticalPath: false))
-            .ToArray();
-
-        var edgeLayouts = statement.Edges
-            .Where(edge => positions.ContainsKey(edge.FromNodeId) && positions.ContainsKey(edge.ToNodeId))
-            .Select(edge =>
-            {
-                var parent = positions[edge.FromNodeId];
-                var child = positions[edge.ToNodeId];
-
-                return new GraphEdgeLayout(
-                    FromNodeId: edge.FromNodeId,
-                    ToNodeId: edge.ToNodeId,
-                    X1: parent.X + (NodeWidth / 2),
-                    Y1: parent.Y + NodeHeight,
-                    X2: child.X + (NodeWidth / 2),
-                    Y2: child.Y,
-                    IsOnCriticalPath: criticalPath.Edges.Contains((edge.FromNodeId, edge.ToNodeId)));
-            })
-            .ToArray();
+        var statementNode = BuildStatementNode(statement, nodeLayouts, maxCost, statementCostRatio, direction);
+        var statementEdges = BuildStatementEdges(statementNode, nodeLayouts, rootNodeIds, nodesById, direction);
+        var edgeLayouts = BuildEdgeLayouts(statement.Edges, nodeLayouts, criticalPath.Edges, direction);
 
         var width = Math.Max(statementNode.X + statementNode.Width, nodeLayouts.Max(node => node.X + node.Width)) + Margin;
-        var height = nodeLayouts.Max(node => node.Y + node.Height) + Margin;
+        var height = Math.Max(statementNode.Y + statementNode.Height, nodeLayouts.Max(node => node.Y + node.Height)) + Margin;
 
-        return new StatementGraphLayout(statement.StatementId, statementNode, width, height, nodeLayouts, statementEdges, edgeLayouts);
+        return new StatementGraphLayout(statement.StatementId, statementNode, width, height, nodeLayouts, statementEdges, edgeLayouts, direction);
     }
 
     /// <summary>
@@ -197,7 +159,55 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
         return (pathNodes, pathEdges);
     }
 
-    private static int LayoutSubtree(
+    private static Dictionary<string, (double X, double Y)> BuildVerticalPositions(
+        StatementPlan statement,
+        IReadOnlyDictionary<string, string[]> childrenByParent,
+        IReadOnlyList<string> rootNodeIds)
+    {
+        var positions = new Dictionary<string, (double X, double Y)>(StringComparer.Ordinal);
+        var nextAvailableColumnByDepth = new Dictionary<int, int>();
+        var nextColumn = 0;
+
+        foreach (var rootNodeId in rootNodeIds)
+        {
+            var assignedColumn = LayoutSubtreeVertical(rootNodeId, depth: 0, preferredColumn: nextColumn, childrenByParent, positions, nextAvailableColumnByDepth);
+            nextColumn = Math.Max(nextColumn, assignedColumn + 1);
+        }
+
+        foreach (var node in statement.Nodes.Where(node => !positions.ContainsKey(node.NodeId)))
+        {
+            var assignedColumn = LayoutSubtreeVertical(node.NodeId, depth: 0, preferredColumn: nextColumn, childrenByParent, positions, nextAvailableColumnByDepth);
+            nextColumn = Math.Max(nextColumn, assignedColumn + 1);
+        }
+
+        return positions;
+    }
+
+    private static Dictionary<string, (double X, double Y)> BuildHorizontalPositions(
+        StatementPlan statement,
+        IReadOnlyDictionary<string, string[]> childrenByParent,
+        IReadOnlyList<string> rootNodeIds)
+    {
+        var positions = new Dictionary<string, (double X, double Y)>(StringComparer.Ordinal);
+        var nextAvailableRowByDepth = new Dictionary<int, int>();
+        var nextRow = 0;
+
+        foreach (var rootNodeId in rootNodeIds)
+        {
+            var assignedRow = LayoutSubtreeHorizontal(rootNodeId, depth: 0, preferredRow: nextRow, childrenByParent, positions, nextAvailableRowByDepth);
+            nextRow = Math.Max(nextRow, assignedRow + 1);
+        }
+
+        foreach (var node in statement.Nodes.Where(node => !positions.ContainsKey(node.NodeId)))
+        {
+            var assignedRow = LayoutSubtreeHorizontal(node.NodeId, depth: 0, preferredRow: nextRow, childrenByParent, positions, nextAvailableRowByDepth);
+            nextRow = Math.Max(nextRow, assignedRow + 1);
+        }
+
+        return positions;
+    }
+
+    private static int LayoutSubtreeVertical(
         string nodeId,
         int depth,
         int preferredColumn,
@@ -243,7 +253,7 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
         {
             var childNodeId = children[childIndex];
             var childPreferredColumn = childIndex == 0 ? assignedColumn : nextSiblingPreferredColumn;
-            var childAssignedColumn = LayoutSubtree(childNodeId, depth + 1, childPreferredColumn, childrenByParent, positions, nextAvailableColumnByDepth, stack);
+            var childAssignedColumn = LayoutSubtreeVertical(childNodeId, depth + 1, childPreferredColumn, childrenByParent, positions, nextAvailableColumnByDepth, stack);
             nextSiblingPreferredColumn = Math.Max(nextSiblingPreferredColumn, childAssignedColumn + 1);
         }
 
@@ -251,20 +261,73 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
         return assignedColumn;
     }
 
+    private static int LayoutSubtreeHorizontal(
+        string nodeId,
+        int depth,
+        int preferredRow,
+        IReadOnlyDictionary<string, string[]> childrenByParent,
+        IDictionary<string, (double X, double Y)> positions,
+        IDictionary<int, int> nextAvailableRowByDepth,
+        ISet<string>? stack = null)
+    {
+        stack ??= new HashSet<string>(StringComparer.Ordinal);
+
+        if (positions.TryGetValue(nodeId, out var existingPosition))
+        {
+            return (int)Math.Round((existingPosition.Y - Margin) / (NodeHeight + VerticalSpacing));
+        }
+
+        var nextAvailableRow = nextAvailableRowByDepth.TryGetValue(depth, out var reservedRow)
+            ? reservedRow
+            : 0;
+        var assignedRow = Math.Max(preferredRow, nextAvailableRow);
+
+        if (!stack.Add(nodeId))
+        {
+            positions[nodeId] = (
+                Margin + StatementNodeWidth + HorizontalSpacing + (depth * (NodeWidth + HorizontalSpacing)),
+                Margin + (assignedRow * (NodeHeight + VerticalSpacing)));
+            nextAvailableRowByDepth[depth] = assignedRow + 1;
+            return assignedRow;
+        }
+
+        positions[nodeId] = (
+            Margin + StatementNodeWidth + HorizontalSpacing + (depth * (NodeWidth + HorizontalSpacing)),
+            Margin + (assignedRow * (NodeHeight + VerticalSpacing)));
+        nextAvailableRowByDepth[depth] = assignedRow + 1;
+
+        if (!childrenByParent.TryGetValue(nodeId, out var children) || children.Length == 0)
+        {
+            stack.Remove(nodeId);
+            return assignedRow;
+        }
+
+        var nextSiblingPreferredRow = assignedRow + 1;
+        for (var childIndex = 0; childIndex < children.Length; childIndex++)
+        {
+            var childNodeId = children[childIndex];
+            var childPreferredRow = childIndex == 0 ? assignedRow : nextSiblingPreferredRow;
+            var childAssignedRow = LayoutSubtreeHorizontal(childNodeId, depth + 1, childPreferredRow, childrenByParent, positions, nextAvailableRowByDepth, stack);
+            nextSiblingPreferredRow = Math.Max(nextSiblingPreferredRow, childAssignedRow + 1);
+        }
+
+        stack.Remove(nodeId);
+        return assignedRow;
+    }
+
     private static StatementGraphNodeLayout BuildStatementNode(
         StatementPlan statement,
         IReadOnlyList<GraphNodeLayout> nodeLayouts,
         decimal maxCost,
-        decimal? statementCostRatio)
+        decimal? statementCostRatio,
+        GraphLayoutDirection direction)
     {
-        var minRootY = nodeLayouts.Min(node => node.Y);
-        var topNodes = nodeLayouts
-            .Where(node => Math.Abs(node.Y - minRootY) < 0.001d)
-            .ToArray();
-        var left = topNodes.Min(node => node.X);
-        var right = topNodes.Max(node => node.X + node.Width);
-        var centerX = left + ((right - left) / 2);
-        var x = Math.Max(Margin, centerX - (StatementNodeWidth / 2));
+        var x = direction == GraphLayoutDirection.HorizontalSsms
+            ? Margin
+            : BuildVerticalStatementX(nodeLayouts);
+        var y = direction == GraphLayoutDirection.HorizontalSsms
+            ? nodeLayouts.Min(node => node.Y)
+            : Margin;
 
         var primaryLabel = BuildStatementPrimaryLabel(statement);
         var hasStatementCost = (statement.Summary.EstimatedSubtreeCost ?? maxCost) > 0;
@@ -279,10 +342,87 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
             PrimaryLabel: primaryLabel,
             SecondaryLabel: string.IsNullOrWhiteSpace(statement.StatementText) ? $"Statement #{statement.StatementId}" : statement.StatementText,
             X: x,
-            Y: Margin,
+            Y: y,
             Width: StatementNodeWidth,
             Height: StatementNodeHeight,
             CostRatio: costRatio);
+    }
+
+    private static double BuildVerticalStatementX(IReadOnlyList<GraphNodeLayout> nodeLayouts)
+    {
+        var minRootY = nodeLayouts.Min(node => node.Y);
+        var topNodes = nodeLayouts
+            .Where(node => Math.Abs(node.Y - minRootY) < 0.001d)
+            .ToArray();
+        var left = topNodes.Min(node => node.X);
+        var right = topNodes.Max(node => node.X + node.Width);
+        var centerX = left + ((right - left) / 2);
+        return Math.Max(Margin, centerX - (StatementNodeWidth / 2));
+    }
+
+    private static IReadOnlyList<GraphEdgeLayout> BuildStatementEdges(
+        StatementGraphNodeLayout statementNode,
+        IReadOnlyList<GraphNodeLayout> nodeLayouts,
+        IReadOnlyList<string> rootNodeIds,
+        IReadOnlyDictionary<string, PlanNode> nodesById,
+        GraphLayoutDirection direction) =>
+        rootNodeIds
+            .Where(rootNodeId => nodesById.ContainsKey(rootNodeId))
+            .Distinct(StringComparer.Ordinal)
+            .Select(rootNodeId => nodeLayouts.FirstOrDefault(node => string.Equals(node.NodeId, rootNodeId, StringComparison.Ordinal)))
+            .Where(node => node is not null)
+            .Cast<GraphNodeLayout>()
+            .Select(node => direction == GraphLayoutDirection.HorizontalSsms
+                ? new GraphEdgeLayout(
+                    FromNodeId: statementNode.StatementId,
+                    ToNodeId: node.NodeId,
+                    X1: node.X,
+                    Y1: node.Y + (node.Height / 2),
+                    X2: statementNode.X + statementNode.Width,
+                    Y2: statementNode.Y + (statementNode.Height / 2),
+                    IsOnCriticalPath: false)
+                : new GraphEdgeLayout(
+                    FromNodeId: statementNode.StatementId,
+                    ToNodeId: node.NodeId,
+                    X1: statementNode.X + (statementNode.Width / 2),
+                    Y1: statementNode.Y + statementNode.Height,
+                    X2: node.X + (node.Width / 2),
+                    Y2: node.Y,
+                    IsOnCriticalPath: false))
+            .ToArray();
+
+    private static IReadOnlyList<GraphEdgeLayout> BuildEdgeLayouts(
+        IEnumerable<PlanEdge> edges,
+        IReadOnlyList<GraphNodeLayout> nodeLayouts,
+        IReadOnlySet<(string From, string To)> criticalPathEdges,
+        GraphLayoutDirection direction)
+    {
+        var layoutsByNodeId = nodeLayouts.ToDictionary(node => node.NodeId, StringComparer.Ordinal);
+        return edges
+            .Where(edge => layoutsByNodeId.ContainsKey(edge.FromNodeId) && layoutsByNodeId.ContainsKey(edge.ToNodeId))
+            .Select(edge =>
+            {
+                var parent = layoutsByNodeId[edge.FromNodeId];
+                var child = layoutsByNodeId[edge.ToNodeId];
+                return direction == GraphLayoutDirection.HorizontalSsms
+                    ? new GraphEdgeLayout(
+                        FromNodeId: edge.FromNodeId,
+                        ToNodeId: edge.ToNodeId,
+                        X1: child.X,
+                        Y1: child.Y + (child.Height / 2),
+                        X2: parent.X + parent.Width,
+                        Y2: parent.Y + (parent.Height / 2),
+                        IsOnCriticalPath: criticalPathEdges.Contains((edge.FromNodeId, edge.ToNodeId)))
+                    : new GraphEdgeLayout(
+                        FromNodeId: edge.FromNodeId,
+                        ToNodeId: edge.ToNodeId,
+                        X1: parent.X + (parent.Width / 2),
+                        Y1: parent.Y + parent.Height,
+                        X2: child.X + (child.Width / 2),
+                        Y2: child.Y,
+                        IsOnCriticalPath: criticalPathEdges.Contains((edge.FromNodeId, edge.ToNodeId)));
+            })
+            .ToArray();
     }
 
     private static string BuildStatementPrimaryLabel(StatementPlan statement)

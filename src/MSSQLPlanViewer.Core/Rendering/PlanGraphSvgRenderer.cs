@@ -44,12 +44,12 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
 
         foreach (var edge in layout.StatementEdges)
         {
-            root.Add(BuildEdge(ns, edge, options, isDashed: true));
+            root.Add(BuildEdge(ns, edge, options, layout.Direction, isDashed: true));
         }
 
         foreach (var edge in layout.Edges)
         {
-            root.Add(BuildEdge(ns, edge, options));
+            root.Add(BuildEdge(ns, edge, options, layout.Direction));
         }
 
         if (layout.StatementNode is not null)
@@ -85,12 +85,17 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
                 new XAttribute("d", "M 0 0 L 10 5 L 0 10 z"),
                 new XAttribute("fill", fill)));
 
-    private static XElement BuildEdge(XNamespace ns, GraphEdgeLayout edge, GraphRenderOptions options, bool isDashed = false)
+    private static XElement BuildEdge(
+        XNamespace ns,
+        GraphEdgeLayout edge,
+        GraphRenderOptions options,
+        GraphLayoutDirection direction,
+        bool isDashed = false)
     {
         var isCritical = options.ShowCriticalPath && edge.IsOnCriticalPath;
         var element = new XElement(
             ns + "path",
-            new XAttribute("d", BuildEdgePath(edge)),
+            new XAttribute("d", BuildEdgePath(edge, direction)),
             new XAttribute("fill", "none"),
             new XAttribute("stroke", isCritical ? "#7c3aed" : "#94a3b8"),
             new XAttribute("stroke-width", isCritical ? "3.4" : "2.2"),
@@ -231,8 +236,16 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
         group.Add(BuildText(
             ns,
             contentX,
-            contentY + 42,
+            contentY + 40,
             $"Node {node.NodeId} | Cost {PlanDisplayFormatter.FormatPercent(node.CostRatio)}",
+            "11",
+            "#64748b",
+            "400"));
+        group.Add(BuildText(
+            ns,
+            contentX,
+            contentY + 56,
+            BuildRowsLabel(node),
             "11",
             "#64748b",
             "400"));
@@ -481,11 +494,23 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
             ns + "path",
             new XAttribute("d", d));
 
-    private static string BuildEdgePath(GraphEdgeLayout edge)
+    private static string BuildEdgePath(GraphEdgeLayout edge, GraphLayoutDirection direction) =>
+        direction == GraphLayoutDirection.HorizontalSsms
+            ? BuildHorizontalEdgePath(edge)
+            : BuildVerticalEdgePath(edge);
+
+    private static string BuildVerticalEdgePath(GraphEdgeLayout edge)
     {
         var controlY1 = edge.Y1 + 36;
         var controlY2 = edge.Y2 - 36;
         return $"M {Format(edge.X1)} {Format(edge.Y1)} C {Format(edge.X1)} {Format(controlY1)}, {Format(edge.X2)} {Format(controlY2)}, {Format(edge.X2)} {Format(edge.Y2)}";
+    }
+
+    private static string BuildHorizontalEdgePath(GraphEdgeLayout edge)
+    {
+        var controlX1 = edge.X1 - 36;
+        var controlX2 = edge.X2 + 36;
+        return $"M {Format(edge.X1)} {Format(edge.Y1)} C {Format(controlX1)} {Format(edge.Y1)}, {Format(controlX2)} {Format(edge.Y2)}, {Format(edge.X2)} {Format(edge.Y2)}";
     }
 
     private static string GetCardFill(GraphNodeLayout node) =>
@@ -516,6 +541,9 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
         icon.Kind is OperatorIconKind.Scan or OperatorIconKind.ConstantScan
         || node.PhysicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase)
         || node.LogicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildRowsLabel(GraphNodeLayout node) =>
+        $"Est rows {PlanDisplayFormatter.FormatNumber(node.EstimatedRows)} | Actual {PlanDisplayFormatter.FormatNumber(node.ActualRows)}";
 
     private static string Trim(string text, int maxLength) =>
         text.Length <= maxLength ? text : $"{text[..(maxLength - 1)]}…";

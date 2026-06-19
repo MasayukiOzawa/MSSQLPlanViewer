@@ -35,6 +35,8 @@ public partial class Home
 
     private bool ShowCriticalPath { get; set; } = true;
 
+    private GraphLayoutDirection CurrentGraphLayoutDirection { get; set; } = GraphLayoutDirection.HorizontalSsms;
+
     private string? ParseError { get; set; }
 
     private string? EstimatedPlanError { get; set; }
@@ -502,6 +504,7 @@ public partial class Home
         {
             ActivePlanId = planId;
             TableActionMessage = null;
+            RefreshSelectedLayout();
         }
     }
 
@@ -707,11 +710,40 @@ public partial class Home
         }
 
         plan.SelectedStatementId = statement.StatementId;
-        plan.SelectedLayout = GraphLayoutService.CreateLayout(statement, CalculateStatementCostRatio(plan.Document, statement));
+        plan.SelectedLayout = GraphLayoutService.CreateLayout(
+            statement,
+            CalculateStatementCostRatio(plan.Document, statement),
+            CurrentGraphLayoutDirection);
         plan.CurrentRows = TableProjector.Project(statement);
         plan.SelectedNodeId = null;
         plan.HoveredNodeId = null;
         plan.IsStatementDetailsSelected = false;
+    }
+
+    private void SetGraphLayoutDirection(GraphLayoutDirection direction)
+    {
+        if (CurrentGraphLayoutDirection == direction)
+        {
+            return;
+        }
+
+        CurrentGraphLayoutDirection = direction;
+        RefreshSelectedLayout();
+    }
+
+    private void RefreshSelectedLayout()
+    {
+        var plan = ActivePlan;
+        var statement = SelectedStatement;
+        if (plan is null || statement is null)
+        {
+            return;
+        }
+
+        plan.SelectedLayout = GraphLayoutService.CreateLayout(
+            statement,
+            CalculateStatementCostRatio(plan.Document, statement),
+            CurrentGraphLayoutDirection);
     }
 
     private static decimal? CalculateStatementCostRatio(ShowplanDocument document, StatementPlan statement)

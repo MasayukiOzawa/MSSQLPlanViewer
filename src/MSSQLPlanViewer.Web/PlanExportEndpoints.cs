@@ -81,6 +81,11 @@ internal static class PlanExportEndpoints
             return formatError!;
         }
 
+        if (!TryResolveGraphLayoutDirection(request?.LayoutDirection, out var layoutDirection, out var layoutDirectionError))
+        {
+            return layoutDirectionError!;
+        }
+
         var resolved = TryResolveStatement(parser, request?.ShowplanXml, request?.StatementId, out var error);
         if (error is not null)
         {
@@ -89,7 +94,8 @@ internal static class PlanExportEndpoints
 
         var layout = layoutService.CreateLayout(
             resolved!.Statement,
-            CalculateStatementCostRatio(resolved.Document, resolved.Statement));
+            CalculateStatementCostRatio(resolved.Document, resolved.Statement),
+            layoutDirection);
         var svg = svgRenderer.Render(
             layout,
             new GraphRenderOptions(request?.CostHighlightThresholdPercent ?? 20, request?.ShowCriticalPath ?? true));
@@ -207,6 +213,36 @@ internal static class PlanExportEndpoints
             out resolvedFormat,
             out error);
 
+    private static bool TryResolveGraphLayoutDirection(
+        string? value,
+        out GraphLayoutDirection direction,
+        out IResult? error)
+    {
+        direction = GraphLayoutDirection.Vertical;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "vertical":
+                direction = GraphLayoutDirection.Vertical;
+                return true;
+            case "horizontal":
+                direction = GraphLayoutDirection.HorizontalSsms;
+                return true;
+            default:
+                error = CreateProblem(
+                    StatusCodes.Status400BadRequest,
+                    "Invalid export request",
+                    "The 'layoutDirection' field is invalid. Supported values: vertical, horizontal.");
+                return false;
+        }
+    }
+
     private static bool TryResolveFormat(
         string? format,
         IReadOnlyDictionary<string, string> supportedFormats,
@@ -253,5 +289,7 @@ internal static class PlanExportEndpoints
         public int CostHighlightThresholdPercent { get; init; } = 20;
 
         public bool ShowCriticalPath { get; init; } = true;
+
+        public string? LayoutDirection { get; init; }
     }
 }

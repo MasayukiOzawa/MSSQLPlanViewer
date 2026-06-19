@@ -27,6 +27,8 @@ public sealed class PlanProjectionTests
         Assert.True(nodesById["0"].Y < nodesById["1"].Y);
         Assert.Equal(nodesById["1"].Y, nodesById["2"].Y);
         Assert.Equal(24, nodesById["0"].X);
+        Assert.Equal(12, nodesById["0"].EstimatedRows);
+        Assert.Equal(12, nodesById["0"].ActualRows);
         Assert.Contains(nodesById["0"].X, new[] { nodesById["1"].X, nodesById["2"].X });
         Assert.True(nodesById["1"].X > nodesById["0"].X || nodesById["2"].X > nodesById["0"].X);
         Assert.NotEqual(nodesById["1"].X, nodesById["2"].X);
@@ -79,6 +81,42 @@ public sealed class PlanProjectionTests
         var statementNode = Assert.IsType<StatementGraphNodeLayout>(layout.StatementNode);
         Assert.Equal("Statement", statementNode.PrimaryLabel);
         Assert.Equal("SELECT * FROM dbo.NATION", statementNode.SecondaryLabel);
+    }
+
+    [Fact]
+    public void GraphLayout_HorizontalSsms_LaysOutTreeLeftToRightWithRightToLeftEdges()
+    {
+        var summary = new StatementPlanSummary(10m, 1, null, null, null, null, null, null, Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<OptimizerStatsUsageEntry>(), Array.Empty<MissingIndexEntry>(), Array.Empty<WaitStatEntry>(), Array.Empty<AccessedObjectEntry>());
+        var statement = new StatementPlan(
+            StatementId: "1",
+            StatementType: "SELECT",
+            StatementText: "SELECT * FROM dbo.NATION",
+            Summary: summary,
+            Nodes: new[] { CreateNode("0", 10m), CreateNode("1", 8m), CreateNode("2", 2m) },
+            Edges: new[] { new PlanEdge("0", "1"), new PlanEdge("0", "2") },
+            Warnings: Array.Empty<PlanWarning>(),
+            RootNodeIds: new[] { "0" });
+
+        var layout = graphLayoutService.CreateLayout(statement, direction: GraphLayoutDirection.HorizontalSsms);
+        var statementNode = Assert.IsType<StatementGraphNodeLayout>(layout.StatementNode);
+        var nodesById = layout.Nodes.ToDictionary(node => node.NodeId, StringComparer.Ordinal);
+
+        Assert.Equal(GraphLayoutDirection.HorizontalSsms, layout.Direction);
+        Assert.True(statementNode.X < nodesById["0"].X);
+        Assert.True(nodesById["0"].X < nodesById["1"].X);
+        Assert.True(nodesById["0"].X < nodesById["2"].X);
+        Assert.Equal(nodesById["0"].Y, nodesById["1"].Y);
+        Assert.True(nodesById["2"].Y > nodesById["0"].Y);
+
+        var statementEdge = Assert.Single(layout.StatementEdges);
+        Assert.Equal("1", statementEdge.FromNodeId);
+        Assert.Equal("0", statementEdge.ToNodeId);
+        Assert.True(statementEdge.X1 > statementEdge.X2);
+
+        var firstChildEdge = Assert.Single(layout.Edges, edge => edge.ToNodeId == "1");
+        Assert.Equal("0", firstChildEdge.FromNodeId);
+        Assert.True(firstChildEdge.X1 > firstChildEdge.X2);
+        Assert.Equal(firstChildEdge.Y1, firstChildEdge.Y2);
     }
 
     [Fact]

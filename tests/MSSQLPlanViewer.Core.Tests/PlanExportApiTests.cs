@@ -91,6 +91,23 @@ public sealed class PlanExportApiTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
+    public async Task ExportSvg_WithHorizontalLayoutDirection_ReturnsHorizontalSvg()
+    {
+        var response = await _client.PostAsJsonAsync("/api/exports/graph?format=svg", new
+        {
+            showplanXml = SamplePlanLoader.Load("nested-loops-2022.sqlplan"),
+            layoutDirection = "horizontal"
+        });
+
+        response.EnsureSuccessStatusCode();
+
+        Assert.Equal("image/svg+xml", response.Content.Headers.ContentType?.MediaType);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.StartsWith("<svg", body, StringComparison.Ordinal);
+        Assert.Contains("M 332 80 C 296 80, 312 68, 276 68", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ExportPng_ReturnsPngFile()
     {
         var response = await _client.PostAsJsonAsync("/api/exports/graph?format=png", new
@@ -188,5 +205,20 @@ public sealed class PlanExportApiTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("Supported values", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GraphExport_ReturnsBadRequestWhenLayoutDirectionIsUnsupported()
+    {
+        var response = await _client.PostAsJsonAsync("/api/exports/graph?format=svg", new
+        {
+            showplanXml = SamplePlanLoader.Load("nested-loops-2022.sqlplan"),
+            layoutDirection = "diagonal"
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("layoutDirection", body, StringComparison.Ordinal);
+        Assert.Contains("vertical, horizontal", body, StringComparison.Ordinal);
     }
 }

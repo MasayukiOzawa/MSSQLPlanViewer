@@ -41,6 +41,8 @@ public sealed class PlanGraphSvgRendererTests
                     240,
                     92,
                     0.72m,
+                    EstimatedRows: 1200,
+                    ActualRows: 1188,
                     HasWarnings: false,
                     IsOnCriticalPath: true)
             },
@@ -61,6 +63,8 @@ public sealed class PlanGraphSvgRendererTests
         Assert.Contains("Query cost 100%", svg);
         Assert.Contains("Seek &lt;Expr&gt;", svg);
         Assert.Contains("dbo.[T&amp;1] &gt; @p", svg);
+        Assert.Contains("Node 1 | Cost 72%", svg);
+        Assert.Contains("Est rows 1,200 | Actual 1,188", svg);
         Assert.Contains("url(#arrow-critical)", svg);
         Assert.Contains("stroke-dasharray=\"4 4\"", svg);
         Assert.Contains("stroke-dasharray=\"5 4\"", svg);
@@ -89,6 +93,8 @@ public sealed class PlanGraphSvgRendererTests
                     240,
                     92,
                     0.72m,
+                    EstimatedRows: 250.5,
+                    ActualRows: null,
                     HasWarnings: true,
                     IsOnCriticalPath: true)
             },
@@ -103,5 +109,47 @@ public sealed class PlanGraphSvgRendererTests
         Assert.DoesNotContain("url(#arrow-critical)", svg, StringComparison.Ordinal);
         Assert.DoesNotContain("stroke-dasharray=\"5 4\"", svg, StringComparison.Ordinal);
         Assert.Contains("stroke=\"#f59e0b\"", svg);
+    }
+
+    [Fact]
+    public void Render_HorizontalSsms_UsesRightToLeftEdgePaths()
+    {
+        var layout = new StatementGraphLayout(
+            StatementId: "stmt3",
+            StatementNode: null,
+            Width: 420,
+            Height: 180,
+            Nodes: new[]
+            {
+                new GraphNodeLayout(
+                    "0",
+                    "Nested Loops",
+                    "Inner Join",
+                    string.Empty,
+                    "Nested Loops",
+                    "Inner Join",
+                    100,
+                    40,
+                    240,
+                    92,
+                    1m,
+                    EstimatedRows: 42,
+                    ActualRows: 42,
+                    HasWarnings: false,
+                    IsOnCriticalPath: true)
+            },
+            StatementEdges: Array.Empty<GraphEdgeLayout>(),
+            Edges: new[]
+            {
+                new GraphEdgeLayout("0", "1", 300, 80, 100, 80, IsOnCriticalPath: true)
+            },
+            Direction: GraphLayoutDirection.HorizontalSsms);
+
+        var svg = _renderer.Render(layout, new GraphRenderOptions(90, true));
+
+        XDocument.Parse(svg);
+        Assert.Contains("M 300 80 C 264 80, 136 80, 100 80", svg);
+        Assert.Contains("url(#arrow-critical)", svg);
+        Assert.DoesNotContain("class=", svg, StringComparison.Ordinal);
     }
 }
