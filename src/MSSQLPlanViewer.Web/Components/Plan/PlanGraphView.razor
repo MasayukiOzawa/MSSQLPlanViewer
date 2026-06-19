@@ -224,8 +224,11 @@ else
                     <text x="@contentX" y="@(contentY + 21)" class="graph-subtitle">
                         @Trim(node.SecondaryLabel, 30)
                     </text>
-                    <text x="@contentX" y="@(contentY + 42)" class="graph-meta">
-                        Node @node.NodeId | Cost @PlanDisplayFormatter.FormatPercent(node.CostRatio) | @BuildRowsLabel(node)
+                    <text x="@contentX" y="@(contentY + 40)" class="graph-meta">
+                        Node @node.NodeId | Cost @PlanDisplayFormatter.FormatPercent(node.CostRatio)
+                    </text>
+                    <text x="@contentX" y="@(contentY + 56)" class="graph-meta graph-rows">
+                        @BuildRowsLabel(node)
                     </text>
                     <rect x="@(bodyX + 16)" y="@(bodyY + node.Height - 12)" width="@(node.Width - 32)" height="4" rx="2" ry="2" class="node-meter-track" />
                     <rect x="@(bodyX + 16)" y="@(bodyY + node.Height - 12)" width="@meterWidth" height="4" rx="2" ry="2" class="node-meter-fill" fill="@GetAccentFill(node, icon)" />

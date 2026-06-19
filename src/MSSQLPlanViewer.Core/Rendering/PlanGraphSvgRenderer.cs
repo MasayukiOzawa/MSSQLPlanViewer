@@ -236,8 +236,16 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
         group.Add(BuildText(
             ns,
             contentX,
-            contentY + 42,
-            $"Node {node.NodeId} | Cost {PlanDisplayFormatter.FormatPercent(node.CostRatio)} | {BuildRowsLabel(node)}",
+            contentY + 40,
+            $"Node {node.NodeId} | Cost {PlanDisplayFormatter.FormatPercent(node.CostRatio)}",
+            "11",
+            "#64748b",
+            "400"));
+        group.Add(BuildText(
+            ns,
+            contentX,
+            contentY + 56,
+            BuildRowsLabel(node),
             "11",
             "#64748b",
             "400"));

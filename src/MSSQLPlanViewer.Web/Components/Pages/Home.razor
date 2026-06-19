@@ -561,14 +561,14 @@
                                 <span class="graph-threshold-label">Layout</span>
                                 <div class="btn-group btn-group-sm" role="group">
                                     <button type="button"
-                                            class="btn @(CurrentGraphLayoutDirection == GraphLayoutDirection.Vertical ? "btn-primary" : "btn-outline-secondary")"
-                                            @onclick="@(() => SetGraphLayoutDirection(GraphLayoutDirection.Vertical))">
-                                        Vertical
-                                    </button>
-                                    <button type="button"
                                             class="btn @(CurrentGraphLayoutDirection == GraphLayoutDirection.HorizontalSsms ? "btn-primary" : "btn-outline-secondary")"
                                             @onclick="@(() => SetGraphLayoutDirection(GraphLayoutDirection.HorizontalSsms))">
                                         Horizontal
+                                    </button>
+                                    <button type="button"
+                                            class="btn @(CurrentGraphLayoutDirection == GraphLayoutDirection.Vertical ? "btn-primary" : "btn-outline-secondary")"
+                                            @onclick="@(() => SetGraphLayoutDirection(GraphLayoutDirection.Vertical))">
+                                        Vertical
                                     </button>
                                 </div>
                             </div>

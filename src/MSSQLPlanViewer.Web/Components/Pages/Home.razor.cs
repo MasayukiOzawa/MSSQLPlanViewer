@@ -35,7 +35,7 @@ public partial class Home
 
     private bool ShowCriticalPath { get; set; } = true;
 
-    private GraphLayoutDirection CurrentGraphLayoutDirection { get; set; } = GraphLayoutDirection.Vertical;
+    private GraphLayoutDirection CurrentGraphLayoutDirection { get; set; } = GraphLayoutDirection.HorizontalSsms;
 
     private string? ParseError { get; set; }
 

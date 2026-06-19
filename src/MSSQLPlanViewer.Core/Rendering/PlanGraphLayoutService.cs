@@ -6,7 +6,7 @@ namespace MSSQLPlanViewer.Core.Rendering;
 public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
 {
     private const double NodeWidth = 252;
-    private const double NodeHeight = 96;
+    private const double NodeHeight = 112;
     private const double StatementNodeWidth = 252;
     private const double StatementNodeHeight = 88;
     private const double HorizontalSpacing = 56;
