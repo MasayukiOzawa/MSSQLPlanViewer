@@ -4,5 +4,8 @@ namespace MSSQLPlanViewer.Core.Rendering;
 
 public interface IPlanGraphLayoutService
 {
-    StatementGraphLayout CreateLayout(StatementPlan statement, decimal? statementCostRatio = null);
+    StatementGraphLayout CreateLayout(
+        StatementPlan statement,
+        decimal? statementCostRatio = null,
+        GraphLayoutDirection direction = GraphLayoutDirection.Vertical);
 }

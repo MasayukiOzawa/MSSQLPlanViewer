@@ -138,6 +138,23 @@ public sealed class PlanRenderingEdgeCaseTests
     }
 
     [Fact]
+    public void CreateLayout_HorizontalSsms_CyclicGraph_PositionsEveryNodeWithoutInfiniteRecursion()
+    {
+        var statement = Statement(
+            nodes: new[] { Node("0"), Node("1") },
+            edges: new[] { Edge("0", "1"), Edge("1", "0") },
+            rootNodeIds: new[] { "0" });
+
+        var layout = _layoutService.CreateLayout(statement, direction: GraphLayoutDirection.HorizontalSsms);
+
+        Assert.Equal(GraphLayoutDirection.HorizontalSsms, layout.Direction);
+        Assert.Equal(2, layout.Nodes.Count);
+        Assert.All(layout.Nodes, node => Assert.True(node.X >= 0 && node.Y >= 0));
+        Assert.True(double.IsFinite(layout.Width));
+        Assert.True(double.IsFinite(layout.Height));
+    }
+
+    [Fact]
     public void CreateLayout_DropsEdgesReferencingUnknownNodes()
     {
         var statement = Statement(

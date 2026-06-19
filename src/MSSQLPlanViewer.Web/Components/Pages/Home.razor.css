@@ -515,6 +515,12 @@ h1 {
     gap: 0.55rem;
 }
 
+.graph-layout-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+
 .graph-threshold-label {
     color: #475569;
     font-size: 0.78rem;

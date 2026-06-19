@@ -7,4 +7,5 @@ public sealed record StatementGraphLayout(
     double Height,
     IReadOnlyList<GraphNodeLayout> Nodes,
     IReadOnlyList<GraphEdgeLayout> StatementEdges,
-    IReadOnlyList<GraphEdgeLayout> Edges);
+    IReadOnlyList<GraphEdgeLayout> Edges,
+    GraphLayoutDirection Direction = GraphLayoutDirection.Vertical);
