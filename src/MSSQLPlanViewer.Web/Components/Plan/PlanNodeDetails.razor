@@ -49,18 +49,6 @@ else if (Node is null)
             </div>
         }
 
-        @if (Statement.Warnings.Count > 0)
-        {
-            <div class="warning-section">
-                <div class="details-label">Statement warnings</div>
-                <div class="warning-list">
-                    @foreach (var warning in Statement.Warnings)
-                    {
-                        <span class="warning-pill">@warning.Name</span>
-                    }
-                </div>
-            </div>
-        }
     </div>
 }
 else
@@ -164,18 +152,6 @@ else
             </div>
         }
 
-        @if (Statement.Warnings.Count > 0)
-        {
-            <div class="warning-section">
-                <div class="details-label">Statement warnings</div>
-                <div class="warning-list">
-                    @foreach (var warning in Statement.Warnings)
-                    {
-                        <span class="warning-pill" title="@warning.Details">@warning.Name</span>
-                    }
-                </div>
-            </div>
-        }
     </div>
 }
 

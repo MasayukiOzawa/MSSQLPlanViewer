@@ -114,7 +114,7 @@ public static class PlanDisplayFormatter
             objectReference.Table
         }
         .Where(value => !string.IsNullOrWhiteSpace(value))
-        .Select(value => $"[{value}]")
+        .Select(value => FormatSqlIdentifier(value!))
         .ToList();
 
         if (pathParts.Count == 0 && !string.IsNullOrWhiteSpace(objectReference.Alias))
@@ -126,7 +126,7 @@ public static class PlanDisplayFormatter
 
         if (!string.IsNullOrWhiteSpace(objectReference.Index))
         {
-            objectName += $" / [{objectReference.Index}]";
+            objectName += $" / {FormatSqlIdentifier(objectReference.Index!)}";
         }
 
         if (!string.IsNullOrWhiteSpace(objectReference.IndexKind))
@@ -135,6 +135,14 @@ public static class PlanDisplayFormatter
         }
 
         return objectName;
+    }
+
+    private static string FormatSqlIdentifier(string value)
+    {
+        var trimmed = value.Trim();
+        return trimmed.StartsWith("[", StringComparison.Ordinal) && trimmed.EndsWith("]", StringComparison.Ordinal)
+            ? trimmed
+            : $"[{trimmed}]";
     }
 
     public static string FormatQualifiedTableName(string? database, string? schema, string? table)

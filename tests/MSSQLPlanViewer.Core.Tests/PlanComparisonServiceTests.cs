@@ -161,7 +161,9 @@ public sealed class PlanComparisonServiceTests
             OptimizerStatsUsageEntries: Array.Empty<OptimizerStatsUsageEntry>(),
             MissingIndexesEntries: Array.Empty<MissingIndexEntry>(),
             WaitStatsEntries: Array.Empty<WaitStatEntry>(),
-            AccessedObjectEntries: Array.Empty<AccessedObjectEntry>());
+            AccessedObjectEntries: Array.Empty<AccessedObjectEntry>(),
+            AccessedIndexEntries: Array.Empty<AccessedIndexEntry>(),
+            ParameterListEntries: Array.Empty<ParameterListEntry>());
 
         return new StatementPlan(
             statementId,

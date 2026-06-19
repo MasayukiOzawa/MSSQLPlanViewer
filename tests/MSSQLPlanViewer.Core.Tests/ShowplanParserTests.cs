@@ -64,6 +64,159 @@ public sealed class ShowplanParserTests
     }
 
     [Fact]
+    public void Parse_CollectsAccessedIndexesPerOperatorIntoStatementSummary()
+    {
+        var xml = SamplePlanLoader.Load("nested-loops-2022.sqlplan");
+
+        var document = parser.Parse(xml);
+
+        var accessedIndexes = document.Statements[0].Summary.AccessedIndexEntries;
+        Assert.Collection(
+            accessedIndexes,
+            item =>
+            {
+                Assert.Equal("1", item.NodeId);
+                Assert.Equal("Index Seek", item.PhysicalOp);
+                Assert.Equal("Index Seek", item.LogicalOp);
+                Assert.Equal("AdventureWorks", item.Database);
+                Assert.Equal("Sales", item.Schema);
+                Assert.Equal("SalesOrderHeader", item.Table);
+                Assert.Equal("IX_SalesOrderHeader_SalesOrderID", item.Index);
+                Assert.Equal("NonClustered", item.IndexKind);
+                Assert.Equal(12, item.EstimatedRows);
+                Assert.Equal(0.0007m, item.EstimatedIoCost);
+                Assert.Equal(12, item.ActualRows);
+                Assert.Equal(5, item.ActualLogicalReads);
+                Assert.Equal(0, item.ActualPhysicalReads);
+            },
+            item =>
+            {
+                Assert.Equal("2", item.NodeId);
+                Assert.Equal("Clustered Index Seek", item.PhysicalOp);
+                Assert.Equal("Clustered Index Seek", item.LogicalOp);
+                Assert.Equal("AdventureWorks", item.Database);
+                Assert.Equal("Sales", item.Schema);
+                Assert.Equal("SalesOrderDetail", item.Table);
+                Assert.Equal("PK_SalesOrderDetail", item.Index);
+                Assert.Equal("Clustered", item.IndexKind);
+                Assert.Equal(12, item.EstimatedRows);
+                Assert.Equal(0.0014m, item.EstimatedIoCost);
+                Assert.Equal(12, item.ActualRows);
+                Assert.Equal(9, item.ActualLogicalReads);
+                Assert.Equal(0, item.ActualPhysicalReads);
+            });
+    }
+
+    [Fact]
+    public void Parse_CollectsAccessedIndexesPerOperatorAndSkipsObjectsWithoutIndex()
+    {
+        const string xml = """
+            <ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2022/ShowPlan">
+              <BatchSequence>
+                <Batch>
+                  <Statements>
+                    <StmtSimple StatementId="1" StatementText="SELECT * FROM dbo.Orders">
+                      <QueryPlan>
+                        <RelOp NodeId="1" PhysicalOp="Index Seek" LogicalOp="Index Seek">
+                          <IndexScan>
+                            <Object Database="SalesDb" Schema="dbo" Table="Orders" Index="IX_Orders_CustomerId" IndexKind="NonClustered" />
+                          </IndexScan>
+                        </RelOp>
+                        <RelOp NodeId="2" PhysicalOp="Index Scan" LogicalOp="Index Scan">
+                          <IndexScan>
+                            <Object Database="SalesDb" Schema="dbo" Table="Orders" Index="IX_Orders_CustomerId" IndexKind="NonClustered" />
+                          </IndexScan>
+                        </RelOp>
+                        <RelOp NodeId="3" PhysicalOp="Table Scan" LogicalOp="Table Scan">
+                          <TableScan>
+                            <Object Database="SalesDb" Schema="dbo" Table="Orders" />
+                          </TableScan>
+                        </RelOp>
+                      </QueryPlan>
+                    </StmtSimple>
+                  </Statements>
+                </Batch>
+              </BatchSequence>
+            </ShowPlanXML>
+            """;
+
+        var document = parser.Parse(xml);
+
+        var accessedIndexes = document.Statements[0].Summary.AccessedIndexEntries;
+        Assert.Collection(
+            accessedIndexes,
+            item =>
+            {
+                Assert.Equal("1", item.NodeId);
+                Assert.Equal("Index Seek", item.PhysicalOp);
+                Assert.Equal("IX_Orders_CustomerId", item.Index);
+                Assert.Null(item.EstimatedRows);
+                Assert.Null(item.EstimatedIoCost);
+                Assert.Null(item.ActualRows);
+                Assert.Null(item.ActualLogicalReads);
+                Assert.Null(item.ActualPhysicalReads);
+            },
+            item =>
+            {
+                Assert.Equal("2", item.NodeId);
+                Assert.Equal("Index Scan", item.PhysicalOp);
+                Assert.Equal("IX_Orders_CustomerId", item.Index);
+                Assert.Null(item.EstimatedRows);
+                Assert.Null(item.EstimatedIoCost);
+                Assert.Null(item.ActualRows);
+                Assert.Null(item.ActualLogicalReads);
+                Assert.Null(item.ActualPhysicalReads);
+            });
+        Assert.DoesNotContain(accessedIndexes, item => item.NodeId == "3");
+    }
+
+    [Fact]
+    public void Parse_CollectsParameterListEntriesIntoStatementSummary()
+    {
+        const string xml = """
+            <ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2022/ShowPlan">
+              <BatchSequence>
+                <Batch>
+                  <Statements>
+                    <StmtSimple StatementId="1" StatementText="SELECT * FROM dbo.Orders WHERE CustomerId = @CustomerId">
+                      <QueryPlan>
+                        <ParameterList>
+                          <ColumnReference Column="@CustomerId" ParameterDataType="int" ParameterCompiledValue="(42)" ParameterRuntimeValue="(43)" ParameterIsNullable="false" />
+                          <ColumnReference Column="@Region" ParameterDataType="nvarchar(20)" ParameterCompiledValue="N'West'" />
+                        </ParameterList>
+                        <RelOp NodeId="1" PhysicalOp="Index Seek" LogicalOp="Index Seek" />
+                      </QueryPlan>
+                    </StmtSimple>
+                  </Statements>
+                </Batch>
+              </BatchSequence>
+            </ShowPlanXML>
+            """;
+
+        var document = parser.Parse(xml);
+
+        var parameters = document.Statements[0].Summary.ParameterListEntries;
+        Assert.Collection(
+            parameters,
+            item =>
+            {
+                Assert.Equal("@CustomerId", item.Parameter);
+                Assert.Equal("int", item.DataType);
+                Assert.Equal("(42)", item.CompiledValue);
+                Assert.Equal("(43)", item.RuntimeValue);
+                Assert.Equal("false", item.IsNullable);
+            },
+            item =>
+            {
+                Assert.Equal("@Region", item.Parameter);
+                Assert.Equal("nvarchar(20)", item.DataType);
+                Assert.Equal("N'West'", item.CompiledValue);
+                Assert.Null(item.RuntimeValue);
+                Assert.Null(item.IsNullable);
+            });
+    }
+
+    [Fact]
     public void Parse_ReadsPerThreadRuntimeCountersAndKeepsAggregateTotals()
     {
         var xml = SamplePlanLoader.Load("parallel-skew-2022.sqlplan");

@@ -261,6 +261,8 @@
         var optimizerHardwareItems = GetVisibleProperties(SelectedStatement.Summary.OptimizerHardwareDependentProperties);
         var missingIndexItems = SelectedStatement.Summary.MissingIndexesEntries;
         var accessedObjectItems = SelectedStatement.Summary.AccessedObjectEntries;
+        var accessedIndexItems = SelectedStatement.Summary.AccessedIndexEntries;
+        var parameterListItems = SelectedStatement.Summary.ParameterListEntries;
         var statementDiagnostics = ActivePlan?.Diagnostics
             .Where(diagnostic => diagnostic.StatementId == SelectedStatement.StatementId)
             .ToArray() ?? Array.Empty<PlanDiagnostic>();
@@ -364,6 +366,42 @@
             </section>
         }
 
+        @if (parameterListItems.Count > 0)
+        {
+            <section class="card-surface summary-table-card">
+                <div class="section-header compact">
+                    <div>
+                        <span class="summary-label">ParameterList</span>
+                    </div>
+                </div>
+                <div class="summary-table-shell">
+                    <table class="table table-sm align-middle summary-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Parameter</th>
+                                <th scope="col">Data type</th>
+                                <th scope="col">Compiled value</th>
+                                <th scope="col">Runtime value</th>
+                                <th scope="col">Nullable</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in parameterListItems)
+                            {
+                                <tr>
+                                    <td>@FormatSummaryValue(item.Parameter)</td>
+                                    <td>@FormatSummaryValue(item.DataType)</td>
+                                    <td class="details-cell">@FormatSummaryValue(item.CompiledValue)</td>
+                                    <td class="details-cell">@FormatSummaryValue(item.RuntimeValue)</td>
+                                    <td>@FormatSummaryValue(item.IsNullable)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+
         @if (accessedObjectItems.Count > 0)
         {
             <section class="card-surface summary-table-card">
@@ -384,6 +422,60 @@
                             {
                                 <tr>
                                     <td class="object-cell">@BuildAccessedObjectName(item)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+
+        @if (accessedIndexItems.Count > 0)
+        {
+            <section class="card-surface summary-table-card">
+                <div class="section-header compact">
+                    <div>
+                        <span class="summary-label">Accessed indexes</span>
+                    </div>
+                </div>
+                <div class="summary-table-shell">
+                    <table class="table table-sm align-middle summary-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Node</th>
+                                <th scope="col">Physical operation</th>
+                                <th scope="col">Logical operation</th>
+                                <th scope="col">Table</th>
+                                <th scope="col">Index</th>
+                                <th scope="col">Index kind</th>
+                                <th scope="col" class="numeric-cell">Est. rows</th>
+                                <th scope="col" class="numeric-cell">Est. I/O cost</th>
+                                <th scope="col" class="numeric-cell">Actual rows</th>
+                                <th scope="col" class="numeric-cell">Actual logical reads</th>
+                                <th scope="col" class="numeric-cell">Actual physical reads</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in accessedIndexItems)
+                            {
+                                <tr class="@(string.Equals(item.NodeId, SelectedNodeId, StringComparison.Ordinal) ? "selected-warning-row" : null)">
+                                    <td class="warning-node-cell">
+                                        <button type="button"
+                                                class="warning-node-button"
+                                                @onclick="@(() => HandleGraphNodeSelected(item.NodeId))">
+                                            Node @item.NodeId
+                                        </button>
+                                    </td>
+                                    <td>@FormatSummaryValue(item.PhysicalOp)</td>
+                                    <td>@FormatSummaryValue(item.LogicalOp)</td>
+                                    <td class="object-cell">@BuildAccessedIndexTableName(item)</td>
+                                    <td class="object-cell">@FormatSummaryValue(item.Index)</td>
+                                    <td>@FormatSummaryValue(item.IndexKind)</td>
+                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.EstimatedRows))</td>
+                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatCost(item.EstimatedIoCost))</td>
+                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.ActualRows))</td>
+                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.ActualLogicalReads))</td>
+                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.ActualPhysicalReads))</td>
                                 </tr>
                             }
                         </tbody>
