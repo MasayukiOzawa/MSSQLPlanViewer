@@ -105,6 +105,23 @@ public sealed class PlanDisplayFormatterTests
     }
 
     [Fact]
+    public void FormatObjectName_DoesNotDoubleBracketAlreadyBracketedParts()
+    {
+        var reference = new PlanObjectReference(
+            Database: "[AGDB01]",
+            Schema: "[dbo]",
+            Table: "[NATION]",
+            Index: "[PK_NATION]",
+            Alias: null,
+            IndexKind: "Clustered",
+            Storage: null);
+
+        Assert.Equal(
+            "[AGDB01].[dbo].[NATION] / [PK_NATION] (Clustered)",
+            PlanDisplayFormatter.FormatObjectName(reference));
+    }
+
+    [Fact]
     public void FormatObjectName_FallsBackToAliasWhenNoNamedParts()
     {
         var reference = new PlanObjectReference(

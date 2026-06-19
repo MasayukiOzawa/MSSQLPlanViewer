@@ -253,6 +253,9 @@ public partial class Home
     private static string BuildAccessedObjectName(AccessedObjectEntry item) =>
         PlanDisplayFormatter.FormatQualifiedTableName(item.Database, item.Schema, item.Table);
 
+    private static string BuildAccessedIndexTableName(AccessedIndexEntry item) =>
+        PlanDisplayFormatter.FormatQualifiedTableName(item.Database, item.Schema, item.Table);
+
     private static string BuildWarningDisplayText(PlanWarning warning)
     {
         var value = !string.IsNullOrWhiteSpace(warning.Details)
@@ -382,6 +385,7 @@ public partial class Home
                 xml = await reader.ReadToEndAsync();
             }
 
+            XmlInput = xml;
             var document = ShowplanParser.Parse(xml);
             AddPlan(document, file.Name);
             FileLoadMessages.Add(new InputMessage($"{file.Name}: loaded.", IsError: false));
@@ -799,6 +803,19 @@ public partial class Home
         EstimatedPlanError = null;
         FileLoadMessages.Clear();
         EstimatedPlanMessages.Clear();
+        ClearLoadedPlanHistory();
+    }
+
+    private void ClearLoadedPlanHistory()
+    {
+        Plans.Clear();
+        ActivePlanId = null;
+        ComparePlanAId = null;
+        ComparePlanBId = null;
+        PastedPlanCounter = 0;
+        EstimatedPlanCounter = 0;
+        TableActionMessage = null;
+        TableFocusRequestVersion++;
     }
 
     private const long MaxFileBytes = 10L * 1024 * 1024;

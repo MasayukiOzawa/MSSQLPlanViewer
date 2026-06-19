@@ -369,7 +369,7 @@ h1 {
     vertical-align: top;
 }
 
-.warning-details-table tr.selected-warning-row > * {
+.summary-table tr.selected-warning-row > * {
     --bs-table-bg: #eff6ff;
     background-color: #eff6ff;
 }
@@ -410,7 +410,7 @@ h1 {
     color: #1e40af;
 }
 
-.warning-details-table tr.selected-warning-row .warning-node-button {
+.summary-table tr.selected-warning-row .warning-node-button {
     border-color: #2563eb;
     background: #dbeafe;
     color: #1e40af;

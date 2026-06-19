@@ -8,7 +8,7 @@
     --node-col-width: 5.5rem;
     --operator-col-width: 20rem;
     --logical-col-width: 8rem;
-    --object-col-width: 7rem;
+    --object-col-width: 24rem;
     margin-bottom: 0;
     font-size: 0.84rem;
     line-height: 1.3;
@@ -112,13 +112,12 @@
 .plan-table .object-col {
     min-width: var(--object-col-width);
     width: var(--object-col-width);
-    max-width: var(--object-col-width);
 }
 
 .plan-table td.object-col {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .plan-table :is(th, td).sticky-col {

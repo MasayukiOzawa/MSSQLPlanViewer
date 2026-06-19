@@ -136,7 +136,7 @@ public sealed class ShowplanParser : IShowplanParser
                     StatementId: GetAttribute(statementElement, "StatementId") ?? statements.Count.ToString(CultureInfo.InvariantCulture),
                     StatementType: GetAttribute(statementElement, "StatementType") ?? statementElementName,
                     StatementText: GetAttribute(statementElement, "StatementText") ?? "(statement text unavailable)",
-                    Summary: ParseStatementSummary(statementElement, queryPlan, BuildAccessedObjectEntries(rootRelOps)),
+                    Summary: ParseStatementSummary(statementElement, queryPlan, BuildAccessedObjectEntries(rootRelOps), BuildAccessedIndexEntries(nodes)),
                     Nodes: nodes,
                     Edges: edges,
                     Warnings: ParseStatementWarnings(statementElement, queryPlan),
@@ -206,7 +206,8 @@ public sealed class ShowplanParser : IShowplanParser
     private static StatementPlanSummary ParseStatementSummary(
         XElement statementElement,
         XElement queryPlanElement,
-        IReadOnlyList<AccessedObjectEntry> accessedObjectEntries) =>
+        IReadOnlyList<AccessedObjectEntry> accessedObjectEntries,
+        IReadOnlyList<AccessedIndexEntry> accessedIndexEntries) =>
         new(
             EstimatedSubtreeCost: GetDecimalAttribute(statementElement, "StatementSubTreeCost"),
             EstimatedRows: GetDoubleAttribute(statementElement, "StatementEstRows"),
@@ -223,7 +224,9 @@ public sealed class ShowplanParser : IShowplanParser
             OptimizerStatsUsageEntries: BuildOptimizerStatsUsageEntries(statementElement, queryPlanElement),
             MissingIndexesEntries: BuildMissingIndexesEntries(queryPlanElement),
             WaitStatsEntries: BuildWaitStatsEntries(queryPlanElement),
-            AccessedObjectEntries: accessedObjectEntries);
+            AccessedObjectEntries: accessedObjectEntries,
+            AccessedIndexEntries: accessedIndexEntries,
+            ParameterListEntries: BuildParameterListEntries(queryPlanElement));
 
     private static IReadOnlyList<PlanWarning> ParseStatementWarnings(XElement statementElement, XElement queryPlanElement) =>
         ParseWarnings(statementElement)
@@ -243,6 +246,56 @@ public sealed class ShowplanParser : IShowplanParser
             .ThenBy(entry => entry.Schema ?? string.Empty, StringComparer.Ordinal)
             .ThenBy(entry => entry.Table, StringComparer.Ordinal)
             .ToArray();
+
+    private static IReadOnlyList<AccessedIndexEntry> BuildAccessedIndexEntries(IEnumerable<PlanNode> nodes) =>
+        nodes
+            .Where(node => !string.IsNullOrWhiteSpace(node.ObjectReference?.Index))
+            .Select(node => new AccessedIndexEntry(
+                NodeId: node.NodeId,
+                PhysicalOp: node.PhysicalOp,
+                LogicalOp: node.LogicalOp,
+                Database: node.ObjectReference?.Database,
+                Schema: node.ObjectReference?.Schema,
+                Table: node.ObjectReference?.Table,
+                Index: node.ObjectReference?.Index ?? string.Empty,
+                IndexKind: node.ObjectReference?.IndexKind,
+                EstimatedRows: node.EstimatedRows,
+                EstimatedIoCost: node.EstimatedIoCost,
+                ActualRows: node.RuntimeMetrics.ActualRows,
+                ActualLogicalReads: node.RuntimeMetrics.ActualLogicalReads,
+                ActualPhysicalReads: node.RuntimeMetrics.ActualPhysicalReads))
+            .ToArray();
+
+    private static IReadOnlyList<ParameterListEntry> BuildParameterListEntries(XElement queryPlanElement)
+    {
+        var parameterListElement = queryPlanElement.Elements().FirstOrDefault(element => HasLocalName(element, "ParameterList"));
+        if (parameterListElement is null)
+        {
+            return Array.Empty<ParameterListEntry>();
+        }
+
+        var entries = new List<ParameterListEntry>();
+        foreach (var columnReferenceElement in parameterListElement.Elements().Where(element => HasLocalName(element, "ColumnReference")))
+        {
+            var parameter = GetAttribute(columnReferenceElement, "Column")
+                ?? GetAttribute(columnReferenceElement, "ParameterName")
+                ?? FormatColumnReference(columnReferenceElement);
+
+            if (string.IsNullOrWhiteSpace(parameter))
+            {
+                continue;
+            }
+
+            entries.Add(new ParameterListEntry(
+                Parameter: parameter,
+                DataType: GetAttribute(columnReferenceElement, "ParameterDataType"),
+                CompiledValue: GetAttribute(columnReferenceElement, "ParameterCompiledValue"),
+                RuntimeValue: GetAttribute(columnReferenceElement, "ParameterRuntimeValue"),
+                IsNullable: GetAttribute(columnReferenceElement, "ParameterIsNullable")));
+        }
+
+        return entries;
+    }
 
     private static PlanObjectReference? ParseObjectReference(XElement relOpElement)
     {
