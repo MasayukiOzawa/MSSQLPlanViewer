@@ -33,11 +33,22 @@ builder.Services.AddScoped<IPlanDiagnosticRule, StaleStatisticsRule>();
 builder.Services.AddScoped<IPlanDiagnosticRule, LargeScanWithResidualPredicateRule>();
 builder.Services.AddScoped<IPlanDiagnosticRule, ParallelThreadSkewRule>();
 builder.Services.AddScoped<IEstimatedShowplanProvider, SqlEstimatedShowplanProvider>();
+builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-if (!app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.UseSwaggerUI(options =>
+    {
+        options.RoutePrefix = "api-docs";
+        options.SwaggerEndpoint("/openapi/v1.json", "MSSQL Plan Viewer API v1");
+        options.DocumentTitle = "MSSQL Plan Viewer API";
+    });
+}
+else
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.

@@ -1,0 +1,39 @@
+@page "/api"
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment WebHostEnvironment
+
+<PageTitle>API Documentation - MSSQL Plan Viewer</PageTitle>
+
+@{
+    var docsEnabled = string.Equals(WebHostEnvironment.EnvironmentName, "Development", StringComparison.OrdinalIgnoreCase);
+}
+
+<div class="api-page">
+    <section class="api-header card-surface">
+        <div>
+            <div class="eyebrow">OpenAPI</div>
+            <h1>API Documentation</h1>
+        </div>
+        @if (docsEnabled)
+        {
+            <a class="btn btn-outline-secondary" href="/openapi/v1.json" target="_blank" rel="noopener noreferrer">Open JSON</a>
+        }
+    </section>
+
+    @if (docsEnabled)
+    {
+        <section class="api-docs-frame card-surface" aria-label="Swagger UI">
+            <iframe src="/api-docs" title="MSSQL Plan Viewer API documentation"></iframe>
+        </section>
+    }
+    else
+    {
+        <section class="api-disabled card-surface">
+            <div class="section-header compact">
+                <div>
+                    <h2>API documentation is available in Development</h2>
+                </div>
+            </div>
+            <p>OpenAPI and Swagger UI are disabled outside Development because these APIs can accept SQL Server connection strings.</p>
+        </section>
+    }
+</div>
