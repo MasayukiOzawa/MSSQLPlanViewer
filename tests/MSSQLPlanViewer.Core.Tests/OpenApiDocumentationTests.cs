@@ -65,9 +65,14 @@ public sealed class OpenApiDocumentationTests : IClassFixture<WebApplicationFact
         Assert.StartsWith("<svg", graphBody, StringComparison.Ordinal);
 
         var horizontalGraphResponse = await client.PostAsync(
+            "/api/exports/graph?format=svg",
+            CreateJsonContent(horizontalGraphSample));
+        horizontalGraphResponse.EnsureSuccessStatusCode();
+
+        var queryOverrideGraphResponse = await client.PostAsync(
             "/api/exports/graph?format=svg&layoutDirection=horizontal",
             CreateJsonContent(graphSample));
-        horizontalGraphResponse.EnsureSuccessStatusCode();
+        queryOverrideGraphResponse.EnsureSuccessStatusCode();
     }
 
     [Fact]
