@@ -237,7 +237,7 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
             ns,
             contentX,
             contentY + 42,
-            BuildRowsLabel(node),
+            $"Node {node.NodeId} | Cost {PlanDisplayFormatter.FormatPercent(node.CostRatio)} | {BuildRowsLabel(node)}",
             "11",
             "#64748b",
             "400"));

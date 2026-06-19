@@ -63,7 +63,7 @@ public sealed class PlanGraphSvgRendererTests
         Assert.Contains("Query cost 100%", svg);
         Assert.Contains("Seek &lt;Expr&gt;", svg);
         Assert.Contains("dbo.[T&amp;1] &gt; @p", svg);
-        Assert.Contains("Est rows 1,200 | Actual 1,188", svg);
+        Assert.Contains("Node 1 | Cost 72% | Est rows 1,200 | Actual 1,188", svg);
         Assert.Contains("url(#arrow-critical)", svg);
         Assert.Contains("stroke-dasharray=\"4 4\"", svg);
         Assert.Contains("stroke-dasharray=\"5 4\"", svg);
