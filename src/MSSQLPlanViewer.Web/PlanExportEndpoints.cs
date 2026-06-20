@@ -20,14 +20,14 @@ internal static class PlanExportEndpoints
         group.MapPost("/table", ExportTable)
             .WithName("ExportPlanTable")
             .WithSummary("Export an execution plan table")
-            .WithDescription("Parses SQL Server Showplan XML and exports the selected statement as CSV, Markdown, or JSON. The format query parameter is required and supports csv, md, markdown, and json.")
+            .WithDescription("Parses SQL Server Showplan XML and exports the selected statement as CSV, Markdown, or JSON. Send Content-Type: application/json. The format query parameter is required and supports csv, md, markdown, and json. The request body requires showplanXml and can include statementId.")
             .Accepts<TableExportRequest>("application/json")
             .Produces(StatusCodes.Status200OK, contentType: "text/csv")
             .Produces(StatusCodes.Status200OK, contentType: "text/markdown")
             .Produces(StatusCodes.Status200OK, contentType: "application/json")
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
-            .AddOpenApiOperationTransformer((operation, _, _) =>
+            .AddOpenApiOperationTransformer((operation, context, _) =>
             {
                 DescribeFormatParameter(
                     operation,
@@ -36,6 +36,11 @@ internal static class PlanExportEndpoints
                     "md",
                     "markdown",
                     "json");
+                DescribeJsonRequestBody(
+                    operation,
+                    "showplanXml (required): SQL Server Showplan XML document to parse and export.",
+                    "statementId (optional): StatementId to export. When omitted, the first statement in the Showplan XML is used.");
+                DescribeExportRequestSchema(context.Document, nameof(TableExportRequest));
                 AddSampleRequestBodyExample(
                     operation,
                     "sample-plan",
@@ -48,7 +53,7 @@ internal static class PlanExportEndpoints
         group.MapPost("/graph", ExportGraph)
             .WithName("ExportPlanGraph")
             .WithSummary("Export an execution plan graph")
-            .WithDescription("Parses SQL Server Showplan XML and exports the selected statement graph as SVG or PNG. The format query parameter is required and supports svg and png.")
+            .WithDescription("Parses SQL Server Showplan XML and exports the selected statement graph as SVG or PNG. Send Content-Type: application/json. The format query parameter is required and supports svg and png. The optional layoutDirection query parameter supports vertical and horizontal and overrides the request body layoutDirection.")
             .Accepts<GraphExportRequest>("application/json")
             .Produces(StatusCodes.Status200OK, contentType: "image/svg+xml")
             .Produces(StatusCodes.Status200OK, contentType: "image/png")
@@ -62,6 +67,13 @@ internal static class PlanExportEndpoints
                     "svg",
                     "png");
                 DescribeLayoutDirectionParameter(operation);
+                DescribeJsonRequestBody(
+                    operation,
+                    "showplanXml (required): SQL Server Showplan XML document to parse and export.",
+                    "statementId (optional): StatementId to export. When omitted, the first statement in the Showplan XML is used.",
+                    "costHighlightThresholdPercent (optional): Operator cost highlight threshold percentage. Values are clamped to 0-100 during rendering. Defaults to 20.",
+                    "showCriticalPath (optional): Set to true to highlight critical path nodes and edges in the graph. Defaults to true.",
+                    "layoutDirection (optional): Graph layout direction. Supported values: vertical, horizontal. Defaults to vertical when omitted.");
                 DescribeGraphRequestBody(operation, context.Document);
                 return Task.CompletedTask;
             });
@@ -210,8 +222,20 @@ internal static class PlanExportEndpoints
 
         if (document?.Components?.Schemas?.TryGetValue(nameof(GraphExportRequest), out var graphRequestSchema) == true)
         {
+            DescribeExportRequestSchema(graphRequestSchema);
+            DescribeSchemaProperty(
+                graphRequestSchema,
+                "costHighlightThresholdPercent",
+                "Optional. Operator cost highlight threshold percentage. Values are clamped to 0-100 during rendering. Defaults to 20.",
+                JsonValue.Create(20));
+            DescribeSchemaProperty(
+                graphRequestSchema,
+                "showCriticalPath",
+                "Optional. Set to true to highlight critical path nodes and edges in the graph. Defaults to true.",
+                JsonValue.Create(true));
             DescribeLayoutDirectionProperty(graphRequestSchema);
         }
+
         AddSampleRequestBodyExample(
             jsonMediaType,
             "sample-plan-vertical",
@@ -271,6 +295,74 @@ internal static class PlanExportEndpoints
         return true;
     }
 
+    private static void DescribeJsonRequestBody(OpenApiOperation operation, params string[] fieldDescriptions)
+    {
+        if (operation.RequestBody is not OpenApiRequestBody requestBody)
+        {
+            return;
+        }
+
+        requestBody.Required = true;
+        requestBody.Description = "Required request header: Content-Type: application/json.";
+        if (fieldDescriptions.Length > 0)
+        {
+            requestBody.Description += $"{Environment.NewLine}{Environment.NewLine}Body fields:{Environment.NewLine}"
+                + string.Join(Environment.NewLine, fieldDescriptions.Select(description => $"- {description}"));
+        }
+    }
+
+    private static void DescribeExportRequestSchema(OpenApiDocument? document, string schemaName)
+    {
+        if (document?.Components?.Schemas?.TryGetValue(schemaName, out var schema) == true)
+        {
+            DescribeExportRequestSchema(schema);
+        }
+    }
+
+    private static void DescribeExportRequestSchema(IOpenApiSchema? schema)
+    {
+        AddRequiredSchemaProperty(schema, "showplanXml");
+        DescribeSchemaProperty(
+            schema,
+            "showplanXml",
+            "Required. SQL Server Showplan XML document to parse and export.",
+            JsonValue.Create(SampleShowplanXml));
+        DescribeSchemaProperty(
+            schema,
+            "statementId",
+            "Optional. StatementId to export. When omitted, the first statement in the Showplan XML is used.",
+            JsonValue.Create("1"));
+    }
+
+    private static void AddRequiredSchemaProperty(IOpenApiSchema? schema, string propertyName)
+    {
+        if (schema is not OpenApiSchema requestSchema)
+        {
+            return;
+        }
+
+        requestSchema.Required ??= new HashSet<string>(StringComparer.Ordinal);
+        requestSchema.Required.Add(propertyName);
+    }
+
+    private static void DescribeSchemaProperty(
+        IOpenApiSchema? schema,
+        string propertyName,
+        string description,
+        JsonNode? example)
+    {
+        if (schema is not OpenApiSchema requestSchema
+            || requestSchema.Properties is null
+            || !requestSchema.Properties.TryGetValue(propertyName, out var propertySchema)
+            || propertySchema is not OpenApiSchema property)
+        {
+            return;
+        }
+
+        property.Description = description;
+        property.Example = example;
+    }
+
     private static void DescribeLayoutDirectionProperty(IOpenApiSchema? schema)
     {
         if (schema is not OpenApiSchema requestSchema
@@ -289,6 +381,7 @@ internal static class PlanExportEndpoints
             JsonValue.Create("horizontal")!
         };
     }
+
     private static void DescribeLayoutDirectionParameter(OpenApiOperation operation)
     {
         var layoutDirectionParameter = operation.Parameters?.FirstOrDefault(parameter =>
@@ -311,6 +404,7 @@ internal static class PlanExportEndpoints
             }
         };
     }
+
     private static void DescribeFormatParameter(
         OpenApiOperation operation,
         string description,

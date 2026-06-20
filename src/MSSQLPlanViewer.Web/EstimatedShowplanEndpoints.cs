@@ -1,8 +1,12 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi;
+using MSSQLPlanViewer.Core.Diagnostics;
 using MSSQLPlanViewer.Core.Models;
 using MSSQLPlanViewer.Core.Parsing;
+using MSSQLPlanViewer.Core.Rendering;
 using MSSQLPlanViewer.Web.Showplans;
 
 namespace MSSQLPlanViewer.Web;
@@ -18,7 +22,7 @@ internal static class EstimatedShowplanEndpoints
         group.MapPost("/estimated", GetEstimatedShowplan)
             .WithName("GetEstimatedShowplan")
             .WithSummary("Retrieve estimated SQL Server showplans")
-            .WithDescription("Connects to SQL Server, requests estimated execution plans for the supplied query, and returns the resulting Showplan XML with parsed summary metadata.")
+            .WithDescription("Connects to SQL Server, requests estimated execution plans for the supplied query, and returns the resulting Showplan XML with parsed summary metadata. Send Content-Type: application/json. The request body requires connectionString and query, and can include label, commandTimeoutSeconds, includeAnalysis, and analysisFormat.")
             .Accepts<EstimatedShowplanApiRequest>("application/json")
             .Produces<EstimatedShowplanApiResponse>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
@@ -26,6 +30,14 @@ internal static class EstimatedShowplanEndpoints
             .ProducesProblem(StatusCodes.Status504GatewayTimeout)
             .AddOpenApiOperationTransformer((operation, context, _) =>
             {
+                DescribeJsonRequestBody(
+                    operation,
+                    "connectionString (required): SQL Server connection string used only by this request.",
+                    "query (required): T-SQL query for which SQL Server should return estimated execution plans.",
+                    "label (optional): Label applied to returned plans.",
+                    "commandTimeoutSeconds (optional): Command timeout in seconds. Supported range: 1-300. Defaults to 60.",
+                    "includeAnalysis (optional): Set to true to return statement summaries and diagnostics in the response. Defaults to false.",
+                    "analysisFormat (optional): Plan table export format to include in analysis.content when includeAnalysis is true. Supported values: json, md, markdown, csv. Defaults to json.");
                 DescribeEstimatedShowplanRequest(operation, context.Document);
                 return Task.CompletedTask;
             });
@@ -39,7 +51,9 @@ internal static class EstimatedShowplanEndpoints
             ["connectionString"] = JsonValue.Create("Server=localhost;Database=master;Integrated Security=true;TrustServerCertificate=true;"),
             ["query"] = JsonValue.Create("SELECT TOP (10) name, object_id FROM sys.objects;"),
             ["label"] = JsonValue.Create("Local master sample"),
-            ["commandTimeoutSeconds"] = JsonValue.Create(30)
+            ["commandTimeoutSeconds"] = JsonValue.Create(30),
+            ["includeAnalysis"] = JsonValue.Create(true),
+            ["analysisFormat"] = JsonValue.Create("json")
         };
 
     private static void DescribeEstimatedShowplanRequest(OpenApiOperation operation, OpenApiDocument? document)
@@ -59,27 +73,62 @@ internal static class EstimatedShowplanEndpoints
 
         if (document?.Components?.Schemas?.TryGetValue(nameof(EstimatedShowplanApiRequest), out var requestSchema) == true)
         {
+            AddRequiredSchemaProperty(requestSchema, "connectionString");
+            AddRequiredSchemaProperty(requestSchema, "query");
             DescribeSchemaProperty(
                 requestSchema,
                 "connectionString",
-                "SQL Server connection string used only by this request. Replace the sample value with your environment before executing.",
+                "Required. SQL Server connection string used only by this request. Replace the sample value with your environment before executing.",
                 JsonValue.Create("Server=localhost;Database=master;Integrated Security=true;TrustServerCertificate=true;"));
             DescribeSchemaProperty(
                 requestSchema,
                 "query",
-                "T-SQL query for which SQL Server should return estimated execution plans.",
+                "Required. T-SQL query for which SQL Server should return estimated execution plans.",
                 JsonValue.Create("SELECT TOP (10) name, object_id FROM sys.objects;"));
             DescribeSchemaProperty(
                 requestSchema,
                 "label",
-                "Optional label applied to returned plans.",
+                "Optional. Label applied to returned plans.",
                 JsonValue.Create("Local master sample"));
             DescribeSchemaProperty(
                 requestSchema,
                 "commandTimeoutSeconds",
-                $"Command timeout in seconds. Supported range: {SqlEstimatedShowplanProvider.MinCommandTimeoutSeconds}-{SqlEstimatedShowplanProvider.MaxCommandTimeoutSeconds}.",
+                $"Optional. Command timeout in seconds. Supported range: {SqlEstimatedShowplanProvider.MinCommandTimeoutSeconds}-{SqlEstimatedShowplanProvider.MaxCommandTimeoutSeconds}. Defaults to {SqlEstimatedShowplanProvider.DefaultCommandTimeoutSeconds}.",
                 JsonValue.Create(30));
+            DescribeSchemaProperty(
+                requestSchema,
+                "includeAnalysis",
+                "Optional. Set to true to return parsed statement summaries and diagnostic findings in the response. Defaults to false.",
+                JsonValue.Create(true));
+            DescribeAnalysisFormatProperty(requestSchema);
         }
+    }
+
+    private static void DescribeJsonRequestBody(OpenApiOperation operation, params string[] fieldDescriptions)
+    {
+        if (operation.RequestBody is not OpenApiRequestBody requestBody)
+        {
+            return;
+        }
+
+        requestBody.Required = true;
+        requestBody.Description = "Required request header: Content-Type: application/json.";
+        if (fieldDescriptions.Length > 0)
+        {
+            requestBody.Description += $"{Environment.NewLine}{Environment.NewLine}Body fields:{Environment.NewLine}"
+                + string.Join(Environment.NewLine, fieldDescriptions.Select(description => $"- {description}"));
+        }
+    }
+
+    private static void AddRequiredSchemaProperty(IOpenApiSchema? schema, string propertyName)
+    {
+        if (schema is not OpenApiSchema requestSchema)
+        {
+            return;
+        }
+
+        requestSchema.Required ??= new HashSet<string>(StringComparer.Ordinal);
+        requestSchema.Required.Add(propertyName);
     }
 
     private static bool TryGetJsonRequestBody(OpenApiOperation operation, out OpenApiMediaType jsonMediaType)
@@ -112,13 +161,38 @@ internal static class EstimatedShowplanEndpoints
         property.Description = description;
         property.Example = example;
     }
+
+
+    private static void DescribeAnalysisFormatProperty(IOpenApiSchema? schema)
+    {
+        if (schema is not OpenApiSchema requestSchema
+            || requestSchema.Properties is null
+            || !requestSchema.Properties.TryGetValue("analysisFormat", out var analysisFormatSchema)
+            || analysisFormatSchema is not OpenApiSchema analysisFormat)
+        {
+            return;
+        }
+
+        analysisFormat.Description = "Optional. Plan table export format to include in analysis.content when includeAnalysis is true. Supported values: json, md, markdown, csv. Defaults to json.";
+        analysisFormat.Example = JsonValue.Create("json");
+        analysisFormat.Enum = new List<JsonNode>
+        {
+            JsonValue.Create("json")!,
+            JsonValue.Create("md")!,
+            JsonValue.Create("markdown")!,
+            JsonValue.Create("csv")!
+        };
+    }
+
     private static async Task<IResult> GetEstimatedShowplan(
         EstimatedShowplanApiRequest? request,
         IEstimatedShowplanProvider showplanProvider,
         IShowplanParser parser,
+        IPlanDiagnosticsService diagnosticsService,
+        IPlanTableProjector tableProjector,
         CancellationToken cancellationToken)
     {
-        if (!TryValidateRequest(request, out var commandTimeoutSeconds, out var validationError))
+        if (!TryValidateRequest(request, out var commandTimeoutSeconds, out var analysisFormat, out var includeAnalysisContent, out var validationError))
         {
             return validationError!;
         }
@@ -164,19 +238,119 @@ internal static class EstimatedShowplanEndpoints
                 StatementCount = document.Statements.Count,
                 SchemaVersion = document.Metadata.SchemaVersion.ToString(),
                 TotalNodeCount = document.TotalNodeCount,
-                TotalWarningCount = document.TotalWarningCount
+                TotalWarningCount = document.TotalWarningCount,
+                Analysis = request!.IncludeAnalysis ? CreateAnalysis(document, diagnosticsService, tableProjector, analysisFormat, includeAnalysisContent) : null
             });
         }
 
         return Results.Ok(new EstimatedShowplanApiResponse { Plans = plans });
     }
 
+    private static EstimatedShowplanApiAnalysis CreateAnalysis(
+        ShowplanDocument document,
+        IPlanDiagnosticsService diagnosticsService,
+        IPlanTableProjector tableProjector,
+        string analysisFormat,
+        bool includeContent)
+    {
+        var diagnostics = diagnosticsService.Analyze(document);
+        var statements = document.Statements.Select(CreateStatementAnalysis).ToArray();
+        var diagnosticDtos = diagnostics.Select(CreateDiagnostic).ToArray();
+
+        return new EstimatedShowplanApiAnalysis
+        {
+            Format = analysisFormat,
+            ContentType = GetAnalysisContentType(analysisFormat),
+            Content = includeContent ? CreateAnalysisContent(analysisFormat, document, tableProjector) : null,
+            Statements = statements,
+            Diagnostics = diagnosticDtos,
+            DiagnosticCount = diagnostics.Count,
+            CriticalDiagnosticCount = diagnostics.Count(diagnostic => diagnostic.Severity == PlanDiagnosticSeverity.Critical),
+            WarningDiagnosticCount = diagnostics.Count(diagnostic => diagnostic.Severity == PlanDiagnosticSeverity.Warning),
+            InfoDiagnosticCount = diagnostics.Count(diagnostic => diagnostic.Severity == PlanDiagnosticSeverity.Info)
+        };
+    }
+
+    private static EstimatedShowplanApiStatementAnalysis CreateStatementAnalysis(StatementPlan statement) =>
+        new()
+        {
+            StatementId = statement.StatementId,
+            StatementType = statement.StatementType,
+            StatementText = statement.StatementText,
+            EstimatedSubtreeCost = statement.Summary.EstimatedSubtreeCost,
+            EstimatedRows = statement.Summary.EstimatedRows,
+            NodeCount = statement.Nodes.Count,
+            EdgeCount = statement.Edges.Count,
+            WarningCount = statement.WarningCount,
+            RootNodeIds = statement.RootNodeIds
+        };
+
+    private static EstimatedShowplanApiDiagnostic CreateDiagnostic(PlanDiagnostic diagnostic) =>
+        new()
+        {
+            RuleId = diagnostic.RuleId,
+            RuleName = diagnostic.RuleName,
+            Severity = FormatDiagnosticSeverity(diagnostic.Severity),
+            StatementId = diagnostic.StatementId,
+            NodeId = diagnostic.NodeId,
+            Message = diagnostic.Message,
+            Recommendation = diagnostic.Recommendation,
+            Evidence = diagnostic.Evidence.Select(CreateDiagnosticEvidence).ToArray()
+        };
+
+    private static EstimatedShowplanApiDiagnosticEvidence CreateDiagnosticEvidence(PlanProperty property) =>
+        new()
+        {
+            Name = property.Name,
+            Value = property.Value
+        };
+
+
+    private static string GetAnalysisContentType(string analysisFormat) =>
+        analysisFormat switch
+        {
+            "markdown" => "text/markdown",
+            "csv" => "text/csv",
+            _ => "application/json"
+        };
+
+    private static string? CreateAnalysisContent(
+        string analysisFormat,
+        ShowplanDocument document,
+        IPlanTableProjector tableProjector)
+    {
+        var statement = document.Statements.FirstOrDefault();
+        var rows = statement is null
+            ? Array.Empty<PlanTableRow>()
+            : tableProjector.Project(statement);
+
+        return analysisFormat switch
+        {
+            "markdown" => PlanTableMarkdownExporter.ToMarkdown(rows),
+            "csv" => PlanTableCsvExporter.ToCsv(rows),
+            "json" => PlanTableJsonExporter.ToJson(rows),
+            _ => null
+        };
+    }
+
+    private static string FormatDiagnosticSeverity(PlanDiagnosticSeverity severity) =>
+        severity switch
+        {
+            PlanDiagnosticSeverity.Critical => "critical",
+            PlanDiagnosticSeverity.Warning => "warning",
+            _ => "info"
+        };
+
     private static bool TryValidateRequest(
         EstimatedShowplanApiRequest? request,
         out int commandTimeoutSeconds,
+        out string analysisFormat,
+        out bool includeAnalysisContent,
         out IResult? error)
     {
         commandTimeoutSeconds = SqlEstimatedShowplanProvider.DefaultCommandTimeoutSeconds;
+        analysisFormat = "json";
+        includeAnalysisContent = false;
         error = null;
 
         if (request is null)
@@ -206,6 +380,14 @@ internal static class EstimatedShowplanEndpoints
             return false;
         }
 
+        includeAnalysisContent = !string.IsNullOrWhiteSpace(request.AnalysisFormat);
+
+        if (!TryResolveAnalysisFormat(request.AnalysisFormat, out analysisFormat, out var analysisFormatError))
+        {
+            error = analysisFormatError;
+            return false;
+        }
+
         commandTimeoutSeconds = request.CommandTimeoutSeconds
             ?? SqlEstimatedShowplanProvider.DefaultCommandTimeoutSeconds;
         if (commandTimeoutSeconds is < SqlEstimatedShowplanProvider.MinCommandTimeoutSeconds
@@ -219,6 +401,40 @@ internal static class EstimatedShowplanEndpoints
         }
 
         return true;
+    }
+
+
+    private static bool TryResolveAnalysisFormat(
+        string? value,
+        out string analysisFormat,
+        out IResult? error)
+    {
+        analysisFormat = "json";
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        var normalizedValue = value.Trim().ToLowerInvariant();
+        switch (normalizedValue)
+        {
+            case "json":
+            case "csv":
+                analysisFormat = normalizedValue;
+                return true;
+            case "md":
+            case "markdown":
+                analysisFormat = "markdown";
+                return true;
+            default:
+                error = CreateProblem(
+                    StatusCodes.Status400BadRequest,
+                    "Invalid estimated showplan request",
+                    "The 'analysisFormat' field is invalid. Supported values: json, md, markdown, csv.");
+                return false;
+        }
     }
 
     private static string BuildPlanLabel(string? label, int ordinal, int count)
@@ -265,6 +481,10 @@ internal static class EstimatedShowplanEndpoints
         public string? Label { get; init; }
 
         public int? CommandTimeoutSeconds { get; init; }
+
+        public bool IncludeAnalysis { get; init; }
+
+        public string? AnalysisFormat { get; init; }
     }
 
     internal sealed class EstimatedShowplanApiResponse
@@ -285,5 +505,77 @@ internal static class EstimatedShowplanEndpoints
         public required int TotalNodeCount { get; init; }
 
         public required int TotalWarningCount { get; init; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public EstimatedShowplanApiAnalysis? Analysis { get; init; }
+    }
+
+    internal sealed class EstimatedShowplanApiAnalysis
+    {
+        public required string Format { get; init; }
+
+        public required string ContentType { get; init; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Content { get; init; }
+
+        public IReadOnlyList<EstimatedShowplanApiStatementAnalysis> Statements { get; init; } = Array.Empty<EstimatedShowplanApiStatementAnalysis>();
+
+        public IReadOnlyList<EstimatedShowplanApiDiagnostic> Diagnostics { get; init; } = Array.Empty<EstimatedShowplanApiDiagnostic>();
+
+        public int DiagnosticCount { get; init; }
+
+        public int CriticalDiagnosticCount { get; init; }
+
+        public int WarningDiagnosticCount { get; init; }
+
+        public int InfoDiagnosticCount { get; init; }
+    }
+
+    internal sealed class EstimatedShowplanApiStatementAnalysis
+    {
+        public required string StatementId { get; init; }
+
+        public required string StatementType { get; init; }
+
+        public required string StatementText { get; init; }
+
+        public decimal? EstimatedSubtreeCost { get; init; }
+
+        public double? EstimatedRows { get; init; }
+
+        public int NodeCount { get; init; }
+
+        public int EdgeCount { get; init; }
+
+        public int WarningCount { get; init; }
+
+        public IReadOnlyList<string> RootNodeIds { get; init; } = Array.Empty<string>();
+    }
+
+    internal sealed class EstimatedShowplanApiDiagnostic
+    {
+        public required string RuleId { get; init; }
+
+        public required string RuleName { get; init; }
+
+        public required string Severity { get; init; }
+
+        public required string StatementId { get; init; }
+
+        public string? NodeId { get; init; }
+
+        public required string Message { get; init; }
+
+        public required string Recommendation { get; init; }
+
+        public IReadOnlyList<EstimatedShowplanApiDiagnosticEvidence> Evidence { get; init; } = Array.Empty<EstimatedShowplanApiDiagnosticEvidence>();
+    }
+
+    internal sealed class EstimatedShowplanApiDiagnosticEvidence
+    {
+        public required string Name { get; init; }
+
+        public required string Value { get; init; }
     }
 }
