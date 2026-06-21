@@ -8,16 +8,6 @@ namespace MSSQLPlanViewer.Core.Parsing;
 
 public sealed class ShowplanParser : IShowplanParser
 {
-    private static readonly IReadOnlyDictionary<string, ShowplanSchemaVersion> NamespaceMap =
-        new Dictionary<string, ShowplanSchemaVersion>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["http://schemas.microsoft.com/sqlserver/2004/07/showplan"] = ShowplanSchemaVersion.SqlServer2004,
-            ["http://schemas.microsoft.com/sqlserver/2012/01/showplan"] = ShowplanSchemaVersion.SqlServer2012,
-            ["http://schemas.microsoft.com/sqlserver/2014/07/showplan"] = ShowplanSchemaVersion.SqlServer2014,
-            ["http://schemas.microsoft.com/sqlserver/2017/03/showplan"] = ShowplanSchemaVersion.SqlServer2017,
-            ["http://schemas.microsoft.com/sqlserver/2022/ShowPlan"] = ShowplanSchemaVersion.SqlServer2022
-        };
-
     private static readonly string[] ExcludedXmlAttributePathPatterns =
     [
         "RelOp.OutputList.ColumnReference",
@@ -55,7 +45,7 @@ public sealed class ShowplanParser : IShowplanParser
 
         try
         {
-            document = LoadDocument(xml);
+            document = ShowplanXmlDocumentLoader.Load(xml, MaxXmlInputLength);
         }
         catch (XmlException exception)
         {
@@ -73,9 +63,9 @@ public sealed class ShowplanParser : IShowplanParser
         var namespaceUri = root.Name.NamespaceName;
         var metadata = new ShowplanMetadata(
             namespaceUri,
-            NamespaceMap.TryGetValue(namespaceUri, out var schemaVersion) ? schemaVersion : ShowplanSchemaVersion.Unknown,
-            GetAttribute(root, "Version"),
-            GetAttribute(root, "Build"));
+            ShowplanSchemaVersionResolver.Resolve(namespaceUri),
+            ShowplanXmlElement.GetAttribute(root, "Version"),
+            ShowplanXmlElement.GetAttribute(root, "Build"));
 
         var statements = ParseStatements(root);
         if (statements.Count == 0)
@@ -84,20 +74,6 @@ public sealed class ShowplanParser : IShowplanParser
         }
 
         return new ShowplanDocument(metadata, statements);
-    }
-
-    private static XDocument LoadDocument(string xml)
-    {
-        var settings = new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-            MaxCharactersInDocument = MaxXmlInputLength
-        };
-
-        using var stringReader = new StringReader(xml);
-        using var xmlReader = XmlReader.Create(stringReader, settings);
-        return XDocument.Load(xmlReader, LoadOptions.SetLineInfo);
     }
 
     private static IReadOnlyList<StatementPlan> ParseStatements(XElement root)
@@ -748,67 +724,7 @@ public sealed class ShowplanParser : IShowplanParser
     }
 
     private static bool ShouldExcludeXmlAttributePath(string path) =>
-        ExcludedXmlAttributePathPatterns.Any(pattern => XmlAttributePathMatchesPattern(path, pattern));
-
-    private static bool XmlAttributePathMatchesPattern(string path, string pattern)
-    {
-        var pathSegments = path.Split('.');
-        var patternSegments = pattern.Split('.');
-        return XmlAttributePathMatchesPattern(pathSegments, 0, patternSegments, 0);
-    }
-
-    private static bool XmlAttributePathMatchesPattern(
-        IReadOnlyList<string> pathSegments,
-        int pathIndex,
-        IReadOnlyList<string> patternSegments,
-        int patternIndex)
-    {
-        if (patternIndex >= patternSegments.Count)
-        {
-            return true;
-        }
-
-        if (pathIndex >= pathSegments.Count)
-        {
-            return patternSegments.Skip(patternIndex).All(segment => segment == "**");
-        }
-
-        var patternSegment = patternSegments[patternIndex];
-        if (patternSegment == "**")
-        {
-            if (patternIndex == patternSegments.Count - 1)
-            {
-                return true;
-            }
-
-            for (var nextPathIndex = pathIndex; nextPathIndex <= pathSegments.Count; nextPathIndex++)
-            {
-                if (XmlAttributePathMatchesPattern(pathSegments, nextPathIndex, patternSegments, patternIndex + 1))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        if (patternSegment != "*"
-            && !NormalizeXmlAttributePathSegment(pathSegments[pathIndex]).StartsWith(patternSegment, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return XmlAttributePathMatchesPattern(pathSegments, pathIndex + 1, patternSegments, patternIndex + 1);
-    }
-
-    private static string NormalizeXmlAttributePathSegment(string segment)
-    {
-        var bracketIndex = segment.IndexOf('[');
-        return bracketIndex >= 0
-            ? segment[..bracketIndex]
-            : segment;
-    }
-
+        ShowplanXmlAttributePathMatcher.MatchesAny(path, ExcludedXmlAttributePathPatterns);
     private static IEnumerable<string> BuildJoinColumnPairs(XElement relOpElement, string leftElementName, string rightElementName)
     {
         var leftColumns = GetOwnedDescendants(relOpElement, leftElementName)

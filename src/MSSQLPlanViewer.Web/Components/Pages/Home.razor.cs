@@ -485,21 +485,10 @@ public partial class Home
 
     private void AddPlan(ShowplanDocument document, string label)
     {
-        var plan = new LoadedPlan
-        {
-            Label = label,
-            Document = document,
-            Diagnostics = PlanDiagnosticsService.Analyze(document)
-        };
-
+        var plan = PlanWorkspace.CreateLoadedPlan(document, label, CurrentGraphLayoutDirection);
         Plans.Add(plan);
         ActivePlanId = plan.Id;
         EnsureCompareSelection();
-
-        if (document.Statements.Count > 0)
-        {
-            SelectStatement(document.Statements[0].StatementId);
-        }
     }
 
     private void SelectPlan(Guid planId)
@@ -535,17 +524,9 @@ public partial class Home
 
     private void EnsureCompareSelection()
     {
-        if (ComparePlanAId is null || Plans.All(plan => plan.Id != ComparePlanAId))
-        {
-            ComparePlanAId = Plans.Count > 0 ? Plans[0].Id : null;
-        }
-
-        var requiresDistinctB = Plans.Count > 1 && ComparePlanBId == ComparePlanAId;
-        if (ComparePlanBId is null || Plans.All(plan => plan.Id != ComparePlanBId) || requiresDistinctB)
-        {
-            ComparePlanBId = Plans.FirstOrDefault(plan => plan.Id != ComparePlanAId)?.Id
-                ?? (Plans.Count > 0 ? Plans[0].Id : null);
-        }
+        var selection = PlanWorkspace.EnsureCompareSelection(Plans, ComparePlanAId, ComparePlanBId);
+        ComparePlanAId = selection.PlanAId;
+        ComparePlanBId = selection.PlanBId;
     }
 
     private void OnComparePlanAChanged(ChangeEventArgs args)
@@ -706,22 +687,7 @@ public partial class Home
         }
 
         TableActionMessage = null;
-        var statement = plan.Document.Statements.FirstOrDefault(item => item.StatementId == statementId)
-            ?? plan.Document.Statements.FirstOrDefault();
-        if (statement is null)
-        {
-            return;
-        }
-
-        plan.SelectedStatementId = statement.StatementId;
-        plan.SelectedLayout = GraphLayoutService.CreateLayout(
-            statement,
-            CalculateStatementCostRatio(plan.Document, statement),
-            CurrentGraphLayoutDirection);
-        plan.CurrentRows = TableProjector.Project(statement);
-        plan.SelectedNodeId = null;
-        plan.HoveredNodeId = null;
-        plan.IsStatementDetailsSelected = false;
+        PlanWorkspace.SelectStatement(plan, statementId, CurrentGraphLayoutDirection);
     }
 
     private void SetGraphLayoutDirection(GraphLayoutDirection direction)
@@ -744,21 +710,7 @@ public partial class Home
             return;
         }
 
-        plan.SelectedLayout = GraphLayoutService.CreateLayout(
-            statement,
-            CalculateStatementCostRatio(plan.Document, statement),
-            CurrentGraphLayoutDirection);
-    }
-
-    private static decimal? CalculateStatementCostRatio(ShowplanDocument document, StatementPlan statement)
-    {
-        var totalCost = document.Statements.Sum(item => item.Summary.EstimatedSubtreeCost ?? 0);
-        if (totalCost <= 0)
-        {
-            return null;
-        }
-
-        return (statement.Summary.EstimatedSubtreeCost ?? 0) / totalCost;
+        PlanWorkspace.RefreshLayout(plan, statement, CurrentGraphLayoutDirection);
     }
 
     private void HandleGraphNodeSelected(string nodeId)

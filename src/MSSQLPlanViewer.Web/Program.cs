@@ -6,6 +6,7 @@ using MSSQLPlanViewer.Core.Comparison;
 using MSSQLPlanViewer.Core.Diagnostics;
 using MSSQLPlanViewer.Core.Diagnostics.Rules;
 using MSSQLPlanViewer.Web.Showplans;
+using MSSQLPlanViewer.Web.State;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,6 +34,9 @@ builder.Services.AddScoped<IPlanDiagnosticRule, StaleStatisticsRule>();
 builder.Services.AddScoped<IPlanDiagnosticRule, LargeScanWithResidualPredicateRule>();
 builder.Services.AddScoped<IPlanDiagnosticRule, ParallelThreadSkewRule>();
 builder.Services.AddScoped<IEstimatedShowplanProvider, SqlEstimatedShowplanProvider>();
+builder.Services.AddScoped<PlanExportService>();
+builder.Services.AddScoped<EstimatedShowplanApiService>();
+builder.Services.AddScoped<PlanWorkspaceService>();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();

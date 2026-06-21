@@ -1,10 +1,8 @@
 @page "/"
 @inject IJSRuntime JS
 @inject IShowplanParser ShowplanParser
-@inject IPlanGraphLayoutService GraphLayoutService
-@inject IPlanTableProjector TableProjector
 @inject IPlanComparisonService PlanComparisonService
-@inject IPlanDiagnosticsService PlanDiagnosticsService
+@inject PlanWorkspaceService PlanWorkspace
 @inject IEstimatedShowplanProvider EstimatedShowplanProvider
 @inject ILogger<Home> Logger
 @using MSSQLPlanViewer.Web.Showplans

@@ -52,7 +52,7 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
 
         var maxCost = statement.Nodes.Max(node => node.EstimatedSubtreeCost ?? 0);
 
-        var criticalPath = ComputeCriticalPath(nodesById, childrenByParent, rootNodeIds, maxCost);
+        var criticalPath = PlanGraphCriticalPathFinder.Compute(nodesById, childrenByParent, rootNodeIds, maxCost);
 
         var nodeLayouts = statement.Nodes
             .Select(node =>
@@ -87,76 +87,6 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
         var height = Math.Max(statementNode.Y + statementNode.Height, nodeLayouts.Max(node => node.Y + node.Height)) + Margin;
 
         return new StatementGraphLayout(statement.StatementId, statementNode, width, height, nodeLayouts, statementEdges, edgeLayouts, direction);
-    }
-
-    /// <summary>
-    /// Traces the dominant estimated-cost chain: starting from the root operator with
-    /// the highest <c>EstimatedSubtreeCost</c>, it repeatedly descends into the child
-    /// with the highest positive subtree cost until reaching a leaf. Subtree cost is
-    /// cumulative, so this chain represents the branch that contributes most to the
-    /// estimated plan cost. Returns empty sets when no usable cost data exists.
-    /// Ties are broken by ordinal node id for deterministic output, and cycle-closing
-    /// edges are intentionally left unmarked.
-    /// </summary>
-    private static (HashSet<string> Nodes, HashSet<(string From, string To)> Edges) ComputeCriticalPath(
-        IReadOnlyDictionary<string, PlanNode> nodesById,
-        IReadOnlyDictionary<string, string[]> childrenByParent,
-        IReadOnlyList<string> rootNodeIds,
-        decimal maxCost)
-    {
-        var pathNodes = new HashSet<string>(StringComparer.Ordinal);
-        var pathEdges = new HashSet<(string From, string To)>();
-
-        if (maxCost <= 0)
-        {
-            return (pathNodes, pathEdges);
-        }
-
-        var current = rootNodeIds
-            .Where(nodesById.ContainsKey)
-            .OrderByDescending(nodeId => nodesById[nodeId].EstimatedSubtreeCost ?? 0)
-            .ThenBy(nodeId => nodeId, StringComparer.Ordinal)
-            .FirstOrDefault();
-
-        while (current is not null && pathNodes.Add(current))
-        {
-            if (!childrenByParent.TryGetValue(current, out var children))
-            {
-                break;
-            }
-
-            string? next = null;
-            var bestCost = 0m;
-            foreach (var childId in children)
-            {
-                var childCost = nodesById.TryGetValue(childId, out var childNode)
-                    ? childNode.EstimatedSubtreeCost ?? 0
-                    : 0;
-
-                if (childCost <= 0)
-                {
-                    continue;
-                }
-
-                if (next is null
-                    || childCost > bestCost
-                    || (childCost == bestCost && string.CompareOrdinal(childId, next) < 0))
-                {
-                    next = childId;
-                    bestCost = childCost;
-                }
-            }
-
-            if (next is null || pathNodes.Contains(next))
-            {
-                break;
-            }
-
-            pathEdges.Add((current, next));
-            current = next;
-        }
-
-        return (pathNodes, pathEdges);
     }
 
     private static Dictionary<string, (double X, double Y)> BuildVerticalPositions(
