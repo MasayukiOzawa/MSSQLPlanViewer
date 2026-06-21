@@ -136,6 +136,10 @@ public partial class Home
 
     private IReadOnlyList<PlanTableRow> CurrentRows => ActivePlan?.CurrentRows ?? Array.Empty<PlanTableRow>();
 
+    private int HighlightedCostNodeCount =>
+        SelectedLayout?.Nodes.Count(node => GraphCostEmphasis.IsEmphasized(
+            GraphCostEmphasis.Resolve(node.CostRatio, GraphCostThresholdPercent))) ?? 0;
+
     private StatementPlan? SelectedStatement =>
         Document?.Statements.FirstOrDefault(statement => statement.StatementId == SelectedStatementId)
         ?? Document?.Statements.FirstOrDefault();

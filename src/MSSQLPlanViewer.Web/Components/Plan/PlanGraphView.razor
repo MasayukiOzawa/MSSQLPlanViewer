@@ -109,16 +109,30 @@ else
                 var iconOriginY = iconTileY + 8;
                 var hasDashedOutline = IsAboveCostThreshold(node);
                 var isCriticalNode = ShowCriticalPath && node.IsOnCriticalPath;
+                var costEmphasisLevel = ResolveCostEmphasisLevel(node);
+                var costEmphasisStyle = GraphCostEmphasis.GetStyle(costEmphasisLevel);
+                var isCostEmphasized = GraphCostEmphasis.IsEmphasized(costEmphasisLevel);
                 var contentX = bodyX + 66;
                 var contentY = bodyY + 29;
                 var meterRatio = (double)Math.Max(0.08m, node.CostRatio);
                 var meterWidth = Math.Max(18d, (node.Width - 32) * meterRatio);
+                var meterHeight = isCostEmphasized ? 7d : 4d;
+                var meterY = bodyY + node.Height - (isCostEmphasized ? 15d : 12d);
+                var badgeWidth = 84d;
+                var badgeHeight = 24d;
+                var badgeX = bodyX + node.Width - badgeWidth - 12d;
+                var badgeY = bodyY - 12d;
 
-                <g class="@GetNodeClass(node, isSelected, isScan, hasDashedOutline, isCriticalNode)"
+                <g class="@GetNodeClass(node, isSelected, isScan, hasDashedOutline, isCriticalNode, costEmphasisLevel)"
                    data-node-id="@node.NodeId"
+                   data-cost-emphasis="@costEmphasisLevel"
                    @onclick="@(() => SelectNode(node.NodeId))"
                    @onmouseenter="@(() => HoverNode(node.NodeId))"
                    @onmouseleave="ClearHoveredNode">
+                    @if (isCostEmphasized)
+                    {
+                        <rect x="@(bodyX - 13)" y="@(bodyY - 13)" width="@(node.Width + 26)" height="@(node.Height + 26)" rx="30" ry="30" class="node-cost-halo" fill="@costEmphasisStyle.HaloFill" stroke="@costEmphasisStyle.HaloStroke" />
+                    }
                     @if (isScan)
                     {
                         <rect x="@(bodyX - 9)" y="@(bodyY - 9)" width="@(node.Width + 18)" height="@(node.Height + 18)" rx="27" ry="27" class="scan-frame" />
@@ -127,12 +141,17 @@ else
                     <rect x="@bodyX" y="@bodyY" width="@node.Width" height="6" rx="18" ry="18" class="node-accent" fill="@GetAccentFill(node, icon)" />
                     @if (hasDashedOutline)
                     {
-                        <rect x="@(bodyX - 6)" y="@(bodyY - 6)" width="@(node.Width + 12)" height="@(node.Height + 12)" rx="24" ry="24" class="node-cost-highlight" />
+                        <rect x="@(bodyX - 6)" y="@(bodyY - 6)" width="@(node.Width + 12)" height="@(node.Height + 12)" rx="24" ry="24" class="node-cost-highlight" stroke="@costEmphasisStyle.OutlineStroke" />
                     }
                     @if (isCriticalNode)
                     {
                         <rect x="@(bodyX - 3)" y="@(bodyY - 3)" width="@(node.Width + 6)" height="@(node.Height + 6)" rx="21" ry="21" class="node-critical-path" />
                     }
+                    @if (isCostEmphasized)
+                    {
+                        <rect x="@badgeX" y="@badgeY" width="@badgeWidth" height="@badgeHeight" rx="12" ry="12" class="node-cost-badge" fill="@costEmphasisStyle.BadgeFill" stroke="@costEmphasisStyle.BadgeStroke" />
+                    }
+                    <text x="@(badgeX + badgeWidth / 2)" y="@(badgeY + 16)" class="@GetCostBadgeTextClass(isCostEmphasized)" fill="@costEmphasisStyle.BadgeTextFill" style="@GetCostBadgeTextStyle(isCostEmphasized)">Cost @PlanDisplayFormatter.FormatPercent(node.CostRatio)</text>
                     <rect x="@iconTileX" y="@iconTileY" width="34" height="34" rx="10" ry="10" class="node-icon-tile" fill="@GetIconTileFill(isSelected)" />
 
                     <g class="node-icon" stroke="@GetAccentFill(node, icon)" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
@@ -230,8 +249,8 @@ else
                     <text x="@contentX" y="@(contentY + 56)" class="graph-meta graph-rows">
                         @BuildRowsLabel(node)
                     </text>
-                    <rect x="@(bodyX + 16)" y="@(bodyY + node.Height - 12)" width="@(node.Width - 32)" height="4" rx="2" ry="2" class="node-meter-track" />
-                    <rect x="@(bodyX + 16)" y="@(bodyY + node.Height - 12)" width="@meterWidth" height="4" rx="2" ry="2" class="node-meter-fill" fill="@GetAccentFill(node, icon)" />
+                    <rect x="@(bodyX + 16)" y="@meterY" width="@(node.Width - 32)" height="@meterHeight" rx="@(meterHeight / 2)" ry="@(meterHeight / 2)" class="@GetMeterTrackClass(isCostEmphasized)" />
+                    <rect x="@(bodyX + 16)" y="@meterY" width="@meterWidth" height="@meterHeight" rx="@(meterHeight / 2)" ry="@(meterHeight / 2)" class="node-meter-fill" fill="@GetMeterFill(node, icon, costEmphasisLevel)" />
                 </g>
             }
         </svg>
@@ -424,7 +443,7 @@ else
         return $"M {edge.X1} {edge.Y1} C {controlX1} {edge.Y1}, {controlX2} {edge.Y2}, {edge.X2} {edge.Y2}";
     }
 
-    private string GetNodeClass(GraphNodeLayout node, bool isSelected, bool isScan, bool hasDashedOutline, bool isCriticalNode)
+    private string GetNodeClass(GraphNodeLayout node, bool isSelected, bool isScan, bool hasDashedOutline, bool isCriticalNode, GraphCostEmphasisLevel costEmphasisLevel)
     {
         var classes = new List<string> { "graph-node" };
 
@@ -451,6 +470,12 @@ else
         if (isCriticalNode)
         {
             classes.Add("critical-path");
+        }
+
+        var costClass = GraphCostEmphasis.GetStyle(costEmphasisLevel).CssClass;
+        if (!string.IsNullOrWhiteSpace(costClass))
+        {
+            classes.Add(costClass);
         }
 
         return string.Join(" ", classes);
@@ -504,14 +529,28 @@ else
         };
     }
 
+    private static string GetMeterFill(GraphNodeLayout node, OperatorIconDescriptor icon, GraphCostEmphasisLevel costEmphasisLevel) =>
+        GraphCostEmphasis.IsEmphasized(costEmphasisLevel)
+            ? GraphCostEmphasis.GetStyle(costEmphasisLevel).MeterFill
+            : GetAccentFill(node, icon);
+
     private static string GetIconTileFill(bool isSelected) =>
         isSelected ? "#dbeafe" : "#f8fafc";
 
-    private bool IsAboveCostThreshold(GraphNodeLayout node)
-    {
-        var threshold = Math.Clamp(CostHighlightThresholdPercent, 0, 100);
-        return node.CostRatio * 100m > threshold;
-    }
+    private GraphCostEmphasisLevel ResolveCostEmphasisLevel(GraphNodeLayout node) =>
+        GraphCostEmphasis.Resolve(node.CostRatio, CostHighlightThresholdPercent);
+
+    private bool IsAboveCostThreshold(GraphNodeLayout node) =>
+        GraphCostEmphasis.IsEmphasized(ResolveCostEmphasisLevel(node));
+
+    private static string GetMeterTrackClass(bool isCostEmphasized) =>
+        isCostEmphasized ? "node-meter-track is-emphasized" : "node-meter-track";
+
+    private static string GetCostBadgeTextClass(bool isCostEmphasized) =>
+        isCostEmphasized ? "node-cost-badge-text" : "node-cost-badge-text is-hidden";
+
+    private static string GetCostBadgeTextStyle(bool isCostEmphasized) =>
+        isCostEmphasized ? "text-anchor: middle;" : "text-anchor: middle; visibility: hidden;";
 
     private static bool IsScanOperator(GraphNodeLayout node, OperatorIconDescriptor icon) =>
         icon.Kind is OperatorIconKind.Scan or OperatorIconKind.ConstantScan

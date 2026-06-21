@@ -68,6 +68,10 @@ public sealed class PlanGraphSvgRendererTests
         Assert.Contains("url(#arrow-critical)", svg);
         Assert.Contains("stroke-dasharray=\"4 4\"", svg);
         Assert.Contains("stroke-dasharray=\"5 4\"", svg);
+        Assert.Contains("data-cost-emphasis=\"Critical\"", svg);
+        Assert.Contains("fill=\"#fef2f2\"", svg);
+        Assert.Contains(">Cost 72%</text>", svg);
+        Assert.Contains("height=\"7\"", svg);
         Assert.DoesNotContain("class=", svg, StringComparison.Ordinal);
     }
 
@@ -108,6 +112,8 @@ public sealed class PlanGraphSvgRendererTests
 
         Assert.DoesNotContain("url(#arrow-critical)", svg, StringComparison.Ordinal);
         Assert.DoesNotContain("stroke-dasharray=\"5 4\"", svg, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-cost-emphasis", svg, StringComparison.Ordinal);
+        Assert.DoesNotContain(">Cost 72%</text>", svg, StringComparison.Ordinal);
         Assert.Contains("stroke=\"#f59e0b\"", svg);
     }
 
@@ -151,5 +157,49 @@ public sealed class PlanGraphSvgRendererTests
         Assert.Contains("M 300 80 C 264 80, 136 80, 100 80", svg);
         Assert.Contains("url(#arrow-critical)", svg);
         Assert.DoesNotContain("class=", svg, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Render_CostEmphasisKeepsWarningAndCriticalPathStyling()
+    {
+        var layout = new StatementGraphLayout(
+            StatementId: "stmt4",
+            StatementNode: null,
+            Width: 360,
+            Height: 220,
+            Nodes: new[]
+            {
+                new GraphNodeLayout(
+                    "4",
+                    "Index Scan",
+                    "Index Scan",
+                    "dbo.Orders",
+                    "Index Scan",
+                    "dbo.Orders",
+                    16,
+                    32,
+                    240,
+                    92,
+                    0.45m,
+                    EstimatedRows: 25000,
+                    ActualRows: 30000,
+                    HasWarnings: true,
+                    IsOnCriticalPath: true)
+            },
+            StatementEdges: Array.Empty<GraphEdgeLayout>(),
+            Edges: new[]
+            {
+                new GraphEdgeLayout("0", "4", 120, 0, 120, 32, IsOnCriticalPath: true)
+            });
+
+        var svg = _renderer.Render(layout, new GraphRenderOptions(20, true));
+
+        Assert.Contains("data-cost-emphasis=\"High\"", svg);
+        Assert.Contains(">Cost 45%</text>", svg);
+        Assert.Contains("fill=\"#fff7ed\"", svg);
+        Assert.Contains("stroke=\"#ea580c\"", svg);
+        Assert.Contains("stroke=\"#f59e0b\"", svg);
+        Assert.Contains("stroke=\"#7c3aed\"", svg);
+        Assert.Contains("url(#arrow-critical)", svg);
     }
 }
