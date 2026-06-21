@@ -64,8 +64,8 @@ public sealed class ShowplanParser : IShowplanParser
         var metadata = new ShowplanMetadata(
             namespaceUri,
             ShowplanSchemaVersionResolver.Resolve(namespaceUri),
-            ShowplanXmlElement.GetAttribute(root, "Version"),
-            ShowplanXmlElement.GetAttribute(root, "Build"));
+            GetAttribute(root, "Version"),
+            GetAttribute(root, "Build"));
 
         var statements = ParseStatements(root);
         if (statements.Count == 0)
