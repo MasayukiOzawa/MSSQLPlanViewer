@@ -80,9 +80,9 @@ public sealed class PlanWorkspaceServiceTests
             new ShowplanMetadata(string.Empty, ShowplanSchemaVersion.Unknown, null, null),
             statements);
 
-    private sealed class StubDiagnosticsService(IReadOnlyList<PlanDiagnostic>? diagnostics = null) : IPlanDiagnosticsService
+    private sealed class StubDiagnosticsService(IReadOnlyList<PlanDiagnostic>? diagnosticsResult = null) : IPlanDiagnosticsService
     {
-        private readonly IReadOnlyList<PlanDiagnostic> diagnostics = diagnostics ?? Array.Empty<PlanDiagnostic>();
+        private readonly IReadOnlyList<PlanDiagnostic> diagnostics = diagnosticsResult ?? Array.Empty<PlanDiagnostic>();
 
         public IReadOnlyList<PlanDiagnostic> Analyze(ShowplanDocument document) => diagnostics;
     }
