@@ -113,8 +113,11 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
     {
         var icon = OperatorIconRegistry.Resolve(node.PhysicalOp, node.LogicalOp);
         var isScan = IsScanOperator(node, icon);
-        var hasDashedOutline = IsAboveCostThreshold(node, options);
         var isCriticalNode = options.ShowCriticalPath && node.IsOnCriticalPath;
+        var costEmphasisLevel = GraphCostEmphasis.Resolve(node.CostRatio, options.CostHighlightThresholdPercent);
+        var costEmphasisStyle = GraphCostEmphasis.GetStyle(costEmphasisLevel);
+        var isCostEmphasized = GraphCostEmphasis.IsEmphasized(costEmphasisLevel);
+        var hasDashedOutline = isCostEmphasized;
         var bodyX = node.X;
         var bodyY = node.Y;
         var iconTileX = bodyX + 16;
@@ -125,11 +128,36 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
         var contentY = bodyY + 29;
         var meterRatio = (double)Math.Max(0.08m, node.CostRatio);
         var meterWidth = Math.Max(18d, (node.Width - 32) * meterRatio);
+        var meterHeight = isCostEmphasized ? 7d : 4d;
+        var meterY = bodyY + node.Height - (isCostEmphasized ? 15d : 12d);
+        var badgeWidth = 84d;
+        var badgeHeight = 24d;
+        var badgeX = bodyX + node.Width - badgeWidth - 12d;
+        var badgeY = bodyY - 12d;
         var accentFill = GetAccentFill(node, icon);
 
         var group = new XElement(
             ns + "g",
             new XAttribute("data-node-id", node.NodeId));
+
+        if (isCostEmphasized)
+        {
+            group.SetAttributeValue("data-cost-emphasis", costEmphasisLevel.ToString());
+            group.Add(
+                new XElement(
+                    ns + "rect",
+                    new XAttribute("x", Format(bodyX - 13)),
+                    new XAttribute("y", Format(bodyY - 13)),
+                    new XAttribute("width", Format(node.Width + 26)),
+                    new XAttribute("height", Format(node.Height + 26)),
+                    new XAttribute("rx", "30"),
+                    new XAttribute("ry", "30"),
+                    new XAttribute("fill", costEmphasisStyle.HaloFill),
+                    new XAttribute("fill-opacity", "0.72"),
+                    new XAttribute("stroke", costEmphasisStyle.HaloStroke),
+                    new XAttribute("stroke-opacity", "0.5"),
+                    new XAttribute("stroke-width", "2")));
+        }
 
         if (isScan)
         {
@@ -183,7 +211,7 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
                     new XAttribute("rx", "24"),
                     new XAttribute("ry", "24"),
                     new XAttribute("fill", "none"),
-                    new XAttribute("stroke", "#0f766e"),
+                    new XAttribute("stroke", costEmphasisStyle.OutlineStroke),
                     new XAttribute("stroke-width", "3"),
                     new XAttribute("stroke-dasharray", "5 4")));
         }
@@ -202,6 +230,32 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
                     new XAttribute("fill", "none"),
                     new XAttribute("stroke", "#7c3aed"),
                     new XAttribute("stroke-width", "2.5")));
+        }
+
+        if (isCostEmphasized)
+        {
+            group.Add(
+                new XElement(
+                    ns + "rect",
+                    new XAttribute("x", Format(badgeX)),
+                    new XAttribute("y", Format(badgeY)),
+                    new XAttribute("width", Format(badgeWidth)),
+                    new XAttribute("height", Format(badgeHeight)),
+                    new XAttribute("rx", "12"),
+                    new XAttribute("ry", "12"),
+                    new XAttribute("fill", costEmphasisStyle.BadgeFill),
+                    new XAttribute("stroke", costEmphasisStyle.BadgeStroke),
+                    new XAttribute("stroke-width", "1.5")));
+            group.Add(
+                new XElement(
+                    ns + "text",
+                    new XAttribute("x", Format(badgeX + badgeWidth / 2)),
+                    new XAttribute("y", Format(badgeY + 16)),
+                    new XAttribute("font-size", "10.5"),
+                    new XAttribute("font-weight", "800"),
+                    new XAttribute("fill", costEmphasisStyle.BadgeTextFill),
+                    new XAttribute("text-anchor", "middle"),
+                    $"Cost {PlanDisplayFormatter.FormatPercent(node.CostRatio)}"));
         }
 
         group.Add(
@@ -253,22 +307,22 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
             new XElement(
                 ns + "rect",
                 new XAttribute("x", Format(bodyX + 16)),
-                new XAttribute("y", Format(bodyY + node.Height - 12)),
+                new XAttribute("y", Format(meterY)),
                 new XAttribute("width", Format(node.Width - 32)),
-                new XAttribute("height", "4"),
-                new XAttribute("rx", "2"),
-                new XAttribute("ry", "2"),
-                new XAttribute("fill", "#e2e8f0")));
+                new XAttribute("height", Format(meterHeight)),
+                new XAttribute("rx", Format(meterHeight / 2)),
+                new XAttribute("ry", Format(meterHeight / 2)),
+                new XAttribute("fill", isCostEmphasized ? "#fee2e2" : "#e2e8f0")));
         group.Add(
             new XElement(
                 ns + "rect",
                 new XAttribute("x", Format(bodyX + 16)),
-                new XAttribute("y", Format(bodyY + node.Height - 12)),
+                new XAttribute("y", Format(meterY)),
                 new XAttribute("width", Format(meterWidth)),
-                new XAttribute("height", "4"),
-                new XAttribute("rx", "2"),
-                new XAttribute("ry", "2"),
-                new XAttribute("fill", accentFill)));
+                new XAttribute("height", Format(meterHeight)),
+                new XAttribute("rx", Format(meterHeight / 2)),
+                new XAttribute("ry", Format(meterHeight / 2)),
+                new XAttribute("fill", GetMeterFill(node, icon, costEmphasisLevel))));
 
         return group;
     }
@@ -515,8 +569,10 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
         };
     }
 
-    private static bool IsAboveCostThreshold(GraphNodeLayout node, GraphRenderOptions options) =>
-        node.CostRatio * 100m > options.ClampedCostHighlightThresholdPercent;
+    private static string GetMeterFill(GraphNodeLayout node, OperatorIconDescriptor icon, GraphCostEmphasisLevel costEmphasisLevel) =>
+        GraphCostEmphasis.IsEmphasized(costEmphasisLevel)
+            ? GraphCostEmphasis.GetStyle(costEmphasisLevel).MeterFill
+            : GetAccentFill(node, icon);
 
     private static bool IsScanOperator(GraphNodeLayout node, OperatorIconDescriptor icon) =>
         icon.Kind is OperatorIconKind.Scan or OperatorIconKind.ConstantScan

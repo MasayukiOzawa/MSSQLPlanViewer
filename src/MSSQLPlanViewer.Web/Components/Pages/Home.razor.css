@@ -534,6 +534,12 @@ h1 {
     width: 7rem;
 }
 
+.chip-emphasis {
+    background: #fef2f2;
+    color: #991b1b;
+    border-color: #fecaca;
+}
+
 .graph-critical-toggle {
     gap: 0.4rem;
     cursor: pointer;

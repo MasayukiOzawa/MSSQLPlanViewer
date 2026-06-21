@@ -646,6 +646,10 @@
                             <div class="section-chips">
                                 <span class="chip">@SelectedStatement!.Nodes.Count operators</span>
                                 <span class="chip">@SelectedStatement.Edges.Count edges</span>
+                                @if (HighlightedCostNodeCount > 0)
+                                {
+                                    <span class="chip chip-emphasis">@HighlightedCostNodeCount high cost</span>
+                                }
                             </div>
                             <div class="graph-layout-control" role="group" aria-label="Graph layout direction">
                                 <span class="graph-threshold-label">Layout</span>
@@ -663,7 +667,7 @@
                                 </div>
                             </div>
                             <label class="graph-threshold-setting">
-                                <span class="graph-threshold-label">Dashed outline &gt; cost</span>
+                                <span class="graph-threshold-label">Highlight cost &gt;</span>
                                 <div class="input-group input-group-sm graph-threshold-input">
                                     <input type="number"
                                            class="form-control"
