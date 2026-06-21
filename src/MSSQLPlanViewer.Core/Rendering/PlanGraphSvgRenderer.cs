@@ -113,11 +113,11 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
     {
         var icon = OperatorIconRegistry.Resolve(node.PhysicalOp, node.LogicalOp);
         var isScan = IsScanOperator(node, icon);
-        var hasDashedOutline = IsAboveCostThreshold(node, options);
         var isCriticalNode = options.ShowCriticalPath && node.IsOnCriticalPath;
         var costEmphasisLevel = GraphCostEmphasis.Resolve(node.CostRatio, options.CostHighlightThresholdPercent);
         var costEmphasisStyle = GraphCostEmphasis.GetStyle(costEmphasisLevel);
         var isCostEmphasized = GraphCostEmphasis.IsEmphasized(costEmphasisLevel);
+        var hasDashedOutline = isCostEmphasized;
         var bodyX = node.X;
         var bodyY = node.Y;
         var iconTileX = bodyX + 16;
@@ -573,9 +573,6 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
         GraphCostEmphasis.IsEmphasized(costEmphasisLevel)
             ? GraphCostEmphasis.GetStyle(costEmphasisLevel).MeterFill
             : GetAccentFill(node, icon);
-
-    private static bool IsAboveCostThreshold(GraphNodeLayout node, GraphRenderOptions options) =>
-        GraphCostEmphasis.IsEmphasized(GraphCostEmphasis.Resolve(node.CostRatio, options.CostHighlightThresholdPercent));
 
     private static bool IsScanOperator(GraphNodeLayout node, OperatorIconDescriptor icon) =>
         icon.Kind is OperatorIconKind.Scan or OperatorIconKind.ConstantScan

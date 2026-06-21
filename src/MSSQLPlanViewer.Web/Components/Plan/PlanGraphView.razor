@@ -107,11 +107,11 @@ else
                 var iconTileY = bodyY + 18;
                 var iconOriginX = iconTileX + 8;
                 var iconOriginY = iconTileY + 8;
-                var hasDashedOutline = IsAboveCostThreshold(node);
                 var isCriticalNode = ShowCriticalPath && node.IsOnCriticalPath;
                 var costEmphasisLevel = ResolveCostEmphasisLevel(node);
                 var costEmphasisStyle = GraphCostEmphasis.GetStyle(costEmphasisLevel);
                 var isCostEmphasized = GraphCostEmphasis.IsEmphasized(costEmphasisLevel);
+                var hasDashedOutline = isCostEmphasized;
                 var contentX = bodyX + 66;
                 var contentY = bodyY + 29;
                 var meterRatio = (double)Math.Max(0.08m, node.CostRatio);
@@ -151,7 +151,7 @@ else
                     {
                         <rect x="@badgeX" y="@badgeY" width="@badgeWidth" height="@badgeHeight" rx="12" ry="12" class="node-cost-badge" fill="@costEmphasisStyle.BadgeFill" stroke="@costEmphasisStyle.BadgeStroke" />
                     }
-                    <text x="@(badgeX + badgeWidth / 2)" y="@(badgeY + 16)" class="@GetCostBadgeTextClass(isCostEmphasized)" fill="@costEmphasisStyle.BadgeTextFill" style="@GetCostBadgeTextStyle(isCostEmphasized)">Cost @PlanDisplayFormatter.FormatPercent(node.CostRatio)</text>
+                    <text x="@(badgeX + badgeWidth / 2)" y="@(badgeY + 16)" class="node-cost-badge-text" fill="@costEmphasisStyle.BadgeTextFill" style="@GetCostBadgeTextStyle(isCostEmphasized)">Cost @PlanDisplayFormatter.FormatPercent(node.CostRatio)</text>
                     <rect x="@iconTileX" y="@iconTileY" width="34" height="34" rx="10" ry="10" class="node-icon-tile" fill="@GetIconTileFill(isSelected)" />
 
                     <g class="node-icon" stroke="@GetAccentFill(node, icon)" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
@@ -540,14 +540,8 @@ else
     private GraphCostEmphasisLevel ResolveCostEmphasisLevel(GraphNodeLayout node) =>
         GraphCostEmphasis.Resolve(node.CostRatio, CostHighlightThresholdPercent);
 
-    private bool IsAboveCostThreshold(GraphNodeLayout node) =>
-        GraphCostEmphasis.IsEmphasized(ResolveCostEmphasisLevel(node));
-
     private static string GetMeterTrackClass(bool isCostEmphasized) =>
         isCostEmphasized ? "node-meter-track is-emphasized" : "node-meter-track";
-
-    private static string GetCostBadgeTextClass(bool isCostEmphasized) =>
-        isCostEmphasized ? "node-cost-badge-text" : "node-cost-badge-text is-hidden";
 
     private static string GetCostBadgeTextStyle(bool isCostEmphasized) =>
         isCostEmphasized ? "text-anchor: middle;" : "text-anchor: middle; visibility: hidden;";
