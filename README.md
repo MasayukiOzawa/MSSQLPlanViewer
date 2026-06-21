@@ -54,7 +54,11 @@ MSSQL Plan Viewer is a Blazor web application that parses SQL Server **Showplan 
 - **Estimated Showplan API**
   - Accepts a connection string and query
   - Uses `SET SHOWPLAN_XML ON`, so the target query is compiled but not executed
+  - Can include parsed statement summaries and diagnostics with `includeAnalysis`
   - `POST /api/showplans/estimated`
+- **API Documentation**
+  - Development-only OpenAPI JSON at `/openapi/v1.json`
+  - Swagger UI is available from the in-app `API` tab and `/api-docs`
 
 ## Project structure
 
@@ -185,6 +189,8 @@ Request body:
 - `POST /api/exports/graph?format=svg`
 - `POST /api/exports/graph?format=png`
 
+Use `layoutDirection=vertical` or `layoutDirection=horizontal` as an optional query parameter for graph exports. If both the query parameter and request body specify `layoutDirection`, the query parameter wins.
+
 Request body:
 
 ```json
@@ -192,7 +198,8 @@ Request body:
   "showplanXml": "<ShowPlanXML ...>...</ShowPlanXML>",
   "statementId": "1",
   "costHighlightThresholdPercent": 20,
-  "showCriticalPath": true
+  "showCriticalPath": true,
+  "layoutDirection": "horizontal"
 }
 ```
 
@@ -220,6 +227,7 @@ Supported endpoints:
 | `/api/exports/table` | `format=json` | `application/json` | JSON table export |
 | `/api/exports/graph` | `format=svg` | `image/svg+xml` | SVG graph export |
 | `/api/exports/graph` | `format=png` | `image/png` | PNG graph export |
+| `/api/exports/graph` | `format=svg` or `format=png`, optional `layoutDirection=vertical` or `layoutDirection=horizontal` | Matching image type | Graph export with explicit layout direction |
 
 Table export request body:
 
@@ -236,6 +244,7 @@ Graph export request body:
 | `statementId` | string | No | First statement | Statement ID to export. |
 | `costHighlightThresholdPercent` | number | No | `20` | Cost percentage threshold used for dashed outline highlighting. |
 | `showCriticalPath` | boolean | No | `true` | Whether to highlight the estimated-cost critical path. |
+| `layoutDirection` | string | No | `vertical` | Graph layout direction. Supported values: `vertical`, `horizontal`. |
 
 Error responses use ASP.NET Core problem details JSON.
 
@@ -255,7 +264,8 @@ Request body:
   "connectionString": "Server=.;Database=AdventureWorks2022;Integrated Security=true;TrustServerCertificate=true;",
   "query": "SELECT TOP (10) * FROM Sales.SalesOrderHeader;",
   "label": "Sales order lookup",
-  "commandTimeoutSeconds": 60
+  "commandTimeoutSeconds": 60,
+  "includeAnalysis": true
 }
 ```
 
@@ -270,7 +280,29 @@ Response body:
       "statementCount": 1,
       "schemaVersion": "SqlServer2022",
       "totalNodeCount": 4,
-      "totalWarningCount": 0
+      "totalWarningCount": 0,
+      "analysis": {
+        "format": "json",
+        "contentType": "application/json",
+        "statements": [
+          {
+            "statementId": "1",
+            "statementType": "SELECT",
+            "statementText": "SELECT TOP (10) * FROM Sales.SalesOrderHeader;",
+            "estimatedSubtreeCost": 0.01,
+            "estimatedRows": 10,
+            "nodeCount": 4,
+            "edgeCount": 3,
+            "warningCount": 0,
+            "rootNodeIds": ["0"]
+          }
+        ],
+        "diagnostics": [],
+        "diagnosticCount": 0,
+        "criticalDiagnosticCount": 0,
+        "warningDiagnosticCount": 0,
+        "infoDiagnosticCount": 0
+      }
     }
   ]
 }
@@ -282,10 +314,12 @@ Response body:
 | `query` | string | Yes | - | Query used to retrieve the estimated execution plan. |
 | `label` | string | No | `Estimated` | Base label for returned plans. |
 | `commandTimeoutSeconds` | number | No | `60` | Command timeout from `1` to `300` seconds. |
+| `includeAnalysis` | boolean | No | `false` | When `true`, each returned plan includes parsed statement summaries and diagnostics in `analysis`. |
+| `analysisFormat` | string | No | `json` | Optional table export format when `includeAnalysis` is `true`. Supported values: `json`, `md`, `markdown`, `csv`. When supplied, `plans[].analysis.content` contains the same first-statement table export body as `POST /api/exports/table` for that format. |
 
 | Status | When |
 | --- | --- |
-| `400` | Required fields are missing, or `commandTimeoutSeconds` is outside `1` to `300`. |
+| `400` | Required fields are missing, `analysisFormat` is unsupported, or `commandTimeoutSeconds` is outside `1` to `300`. |
 | `502` | SQL Server connection, permission, compilation, or Showplan retrieval fails. |
 | `504` | SQL Server does not return before the command timeout. |
 
@@ -332,11 +366,11 @@ curl.exe -X POST "$baseUrl/api/showplans/estimated" `
     -o estimated-showplan-response.json
 ```
 
-The response JSON contains one or more `plans` entries. Each entry includes `showplanXml`, which can be pasted into the viewer, saved as `.sqlplan`, or sent to the Export API as `showplanXml`.
+The response JSON contains one or more `plans` entries. Each entry includes `showplanXml`, which can be pasted into the viewer, saved as `.sqlplan`, or sent to the Export API as `showplanXml`. If `includeAnalysis` is `true`, each entry also includes `analysis` with parsed statement summaries and diagnostics. Use `analysisFormat` to include `json`, `md`, `markdown`, or `csv` table export content in `plans[].analysis.content`; the HTTP response body stays JSON.
 
-### Retrieve an estimated plan and analyze it
+### Retrieve and analyze an estimated plan in one call
 
-This example retrieves an estimated execution plan from SQL Server, then sends the returned Showplan XML to the existing Export API to produce analysis artifacts.
+Set `includeAnalysis` to `true` to return parsed statement summaries and diagnostics together with the Showplan XML. Set `analysisFormat` to `json`, `md`, `markdown`, or `csv` to include the same table export content produced by `POST /api/exports/table`.
 
 ```powershell
 $baseUrl = "http://localhost:5293"
@@ -346,7 +380,9 @@ $estimatedPlanRequest = @{
     query = "SELECT TOP (10) * FROM Sales.SalesOrderHeader;"
     label = "Sales order lookup"
     commandTimeoutSeconds = 60
-} | ConvertTo-Json -Depth 5
+    includeAnalysis = $true
+    analysisFormat = "md"
+} | ConvertTo-Json -Depth 8
 
 $estimatedPlanResponse = Invoke-RestMethod `
     -Uri "$baseUrl/api/showplans/estimated" `
@@ -355,28 +391,13 @@ $estimatedPlanResponse = Invoke-RestMethod `
     -Body $estimatedPlanRequest
 
 $plan = $estimatedPlanResponse.plans[0]
+$plan.analysis.statements | Select-Object statementId, statementType, nodeCount, warningCount
+$plan.analysis.diagnostics | Select-Object severity, ruleId, statementId, nodeId, message
+$plan.analysis.content | Set-Content .\estimated-analysis.md -Encoding utf8
 $plan.showplanXml | Set-Content .\estimated-plan.sqlplan -Encoding utf8
-
-$analysisRequest = @{
-    showplanXml = $plan.showplanXml
-} | ConvertTo-Json -Depth 5
-
-Invoke-WebRequest `
-    -Uri "$baseUrl/api/exports/table?format=csv" `
-    -Method Post `
-    -ContentType "application/json" `
-    -Body $analysisRequest `
-    -OutFile .\estimated-plan-table.csv
-
-Invoke-WebRequest `
-    -Uri "$baseUrl/api/exports/graph?format=svg" `
-    -Method Post `
-    -ContentType "application/json" `
-    -Body $analysisRequest `
-    -OutFile .\estimated-plan-graph.svg
 ```
 
-Open `estimated-plan.sqlplan` in the web UI to inspect the same plan with the graphical viewer, table view, diagnostics, plan details, and operator details.
+The `analysis` object is omitted when `includeAnalysis` is omitted or `false`. When `analysisFormat` is omitted, `analysis.content` is omitted and the structured `statements` and `diagnostics` fields remain available. When `analysisFormat` is supplied, `analysis.content` contains the same first-statement table export body as `POST /api/exports/table` for `json`, `md`/`markdown`, or `csv`, and `analysis.contentType` identifies the media type. You can still send `showplanXml` to the Export API to create CSV, Markdown, JSON, SVG, or PNG artifacts.
 
 ## Export API examples
 

@@ -26,12 +26,29 @@ public sealed class OpenApiDocumentationTests : IClassFixture<WebApplicationFact
         Assert.True(paths.TryGetProperty("/api/exports/graph", out var graphExportPath));
         Assert.True(paths.TryGetProperty("/api/showplans/estimated", out var estimatedShowplanPath));
 
-        AssertParameterEnum(tableExportPath.GetProperty("post"), "format", required: true, "csv", "md", "markdown", "json");
+        var tableOperation = tableExportPath.GetProperty("post");
+        AssertParameterEnum(tableOperation, "format", required: true, "csv", "md", "markdown", "json");
+        AssertJsonRequestBody(tableOperation, "Body fields:", "showplanXml (required): SQL Server Showplan XML", "statementId (optional): StatementId");
+        AssertComponentRequired(document.RootElement, "TableExportRequest", "showplanXml");
+        AssertComponentPropertyDescription(document.RootElement, "TableExportRequest", "showplanXml", "Required.");
+        AssertComponentPropertyDescription(document.RootElement, "TableExportRequest", "statementId", "Optional.");
+
         var graphOperation = graphExportPath.GetProperty("post");
         AssertParameterEnum(graphOperation, "format", required: true, "svg", "png");
         AssertParameterEnum(graphOperation, "layoutDirection", required: false, "vertical", "horizontal");
+        AssertJsonRequestBody(graphOperation, "Body fields:", "showplanXml (required): SQL Server Showplan XML", "costHighlightThresholdPercent (optional): Operator cost highlight threshold", "layoutDirection (optional): Graph layout direction");
+        AssertComponentRequired(document.RootElement, "GraphExportRequest", "showplanXml");
         AssertComponentPropertyEnum(document.RootElement, "GraphExportRequest", "layoutDirection", "vertical", "horizontal");
-        AssertEstimatedShowplanRequestExample(document.RootElement, estimatedShowplanPath.GetProperty("post"));
+        AssertComponentPropertyDescription(document.RootElement, "GraphExportRequest", "costHighlightThresholdPercent", "0-100");
+        AssertComponentPropertyDescription(document.RootElement, "GraphExportRequest", "showCriticalPath", "Defaults to true");
+
+        var estimatedOperation = estimatedShowplanPath.GetProperty("post");
+        AssertJsonRequestBody(estimatedOperation, "Body fields:", "connectionString (required): SQL Server connection string", "query (required): T-SQL query", "commandTimeoutSeconds (optional): Command timeout", "includeAnalysis (optional): Set to true", "analysisFormat (optional): Plan table export format");
+        AssertComponentRequired(document.RootElement, "EstimatedShowplanApiRequest", "connectionString", "query");
+        AssertEstimatedShowplanRequestExample(document.RootElement, estimatedOperation);
+        AssertComponentPropertyDescription(document.RootElement, "EstimatedShowplanApiRequest", "includeAnalysis", "diagnostic");
+        AssertComponentPropertyDescription(document.RootElement, "EstimatedShowplanApiRequest", "analysisFormat", "json, md, markdown, csv");
+        AssertComponentPropertyEnum(document.RootElement, "EstimatedShowplanApiRequest", "analysisFormat", "json", "md", "markdown", "csv");
     }
 
     [Fact]
@@ -130,10 +147,14 @@ public sealed class OpenApiDocumentationTests : IClassFixture<WebApplicationFact
         Assert.Contains("sys.objects", sample.GetProperty("query").GetString(), StringComparison.Ordinal);
         Assert.Equal("Local master sample", sample.GetProperty("label").GetString());
         Assert.Equal(30, sample.GetProperty("commandTimeoutSeconds").GetInt32());
+        Assert.True(sample.GetProperty("includeAnalysis").GetBoolean());
+        Assert.Equal("json", sample.GetProperty("analysisFormat").GetString());
 
         AssertComponentPropertyExample(document, "EstimatedShowplanApiRequest", "connectionString", "Server=localhost");
         AssertComponentPropertyExample(document, "EstimatedShowplanApiRequest", "query", "sys.objects");
         AssertComponentPropertyExample(document, "EstimatedShowplanApiRequest", "label", "Local master sample");
+        AssertComponentPropertyBooleanExample(document, "EstimatedShowplanApiRequest", "includeAnalysis", expectedValue: true);
+        AssertComponentPropertyExample(document, "EstimatedShowplanApiRequest", "analysisFormat", "json");
     }
 
     private static void AssertParameterEnum(JsonElement operation, string parameterName, bool required, params string[] expectedValues)
@@ -171,6 +192,63 @@ public sealed class OpenApiDocumentationTests : IClassFixture<WebApplicationFact
             .ToArray();
 
         Assert.Equal(expectedValues, actualValues);
+    }
+
+    private static void AssertJsonRequestBody(JsonElement operation, params string[] expectedDescriptionSubstrings)
+    {
+        var requestBody = operation.GetProperty("requestBody");
+        Assert.True(requestBody.GetProperty("required").GetBoolean());
+        Assert.Contains("Content-Type: application/json", requestBody.GetProperty("description").GetString(), StringComparison.Ordinal);
+        Assert.True(requestBody.GetProperty("content").TryGetProperty("application/json", out _));
+
+        foreach (var expectedDescriptionSubstring in expectedDescriptionSubstrings)
+        {
+            Assert.Contains(expectedDescriptionSubstring, requestBody.GetProperty("description").GetString(), StringComparison.Ordinal);
+        }
+    }
+
+    private static void AssertComponentRequired(JsonElement document, string schemaName, params string[] expectedProperties)
+    {
+        var actualProperties = document
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty(schemaName)
+            .GetProperty("required")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .ToArray();
+
+        foreach (var expectedProperty in expectedProperties)
+        {
+            Assert.Contains(expectedProperty, actualProperties);
+        }
+    }
+
+    private static void AssertComponentPropertyDescription(JsonElement document, string schemaName, string propertyName, string expectedSubstring)
+    {
+        var description = document
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty(schemaName)
+            .GetProperty("properties")
+            .GetProperty(propertyName)
+            .GetProperty("description")
+            .GetString();
+
+        Assert.Contains(expectedSubstring, description, StringComparison.Ordinal);
+    }
+
+    private static void AssertComponentPropertyBooleanExample(JsonElement document, string schemaName, string propertyName, bool expectedValue)
+    {
+        var property = document
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty(schemaName)
+            .GetProperty("properties")
+            .GetProperty(propertyName);
+
+        Assert.Equal(expectedValue, property.GetProperty("example").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(property.GetProperty("description").GetString()));
     }
 
     private static void AssertComponentPropertyExample(JsonElement document, string schemaName, string propertyName, string expectedSubstring)
