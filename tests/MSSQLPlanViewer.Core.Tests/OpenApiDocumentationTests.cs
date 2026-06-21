@@ -153,7 +153,7 @@ public sealed class OpenApiDocumentationTests : IClassFixture<WebApplicationFact
         AssertComponentPropertyExample(document, "EstimatedShowplanApiRequest", "connectionString", "Server=localhost");
         AssertComponentPropertyExample(document, "EstimatedShowplanApiRequest", "query", "sys.objects");
         AssertComponentPropertyExample(document, "EstimatedShowplanApiRequest", "label", "Local master sample");
-        AssertComponentPropertyExample(document, "EstimatedShowplanApiRequest", "includeAnalysis", "True");
+        AssertComponentPropertyBooleanExample(document, "EstimatedShowplanApiRequest", "includeAnalysis", expectedValue: true);
         AssertComponentPropertyExample(document, "EstimatedShowplanApiRequest", "analysisFormat", "json");
     }
 
@@ -237,6 +237,20 @@ public sealed class OpenApiDocumentationTests : IClassFixture<WebApplicationFact
 
         Assert.Contains(expectedSubstring, description, StringComparison.Ordinal);
     }
+
+    private static void AssertComponentPropertyBooleanExample(JsonElement document, string schemaName, string propertyName, bool expectedValue)
+    {
+        var property = document
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty(schemaName)
+            .GetProperty("properties")
+            .GetProperty(propertyName);
+
+        Assert.Equal(expectedValue, property.GetProperty("example").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(property.GetProperty("description").GetString()));
+    }
+
     private static void AssertComponentPropertyExample(JsonElement document, string schemaName, string propertyName, string expectedSubstring)
     {
         var property = document
