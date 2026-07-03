@@ -18,4 +18,5 @@ public sealed record StatementPlanSummary(
     IReadOnlyList<WaitStatEntry> WaitStatsEntries,
     IReadOnlyList<AccessedObjectEntry> AccessedObjectEntries,
     IReadOnlyList<AccessedIndexEntry> AccessedIndexEntries,
+    IReadOnlyList<SeekScanPredicateEntry> SeekScanPredicateEntries,
     IReadOnlyList<ParameterListEntry> ParameterListEntries);

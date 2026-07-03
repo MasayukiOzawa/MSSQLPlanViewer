@@ -343,6 +343,22 @@ h1 {
     white-space: normal;
 }
 
+.seek-scan-predicate-table {
+    min-width: 86rem;
+}
+
+.seek-scan-predicate-table .object-cell {
+    white-space: nowrap;
+}
+
+.seek-scan-predicate-table .predicate-cell {
+    min-width: 28rem;
+    max-width: 56rem;
+    color: #334155;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
 .plan-detail-table .object-cell {
     white-space: nowrap;
 }

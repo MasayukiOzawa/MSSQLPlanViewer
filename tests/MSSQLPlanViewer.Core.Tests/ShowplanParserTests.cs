@@ -171,6 +171,87 @@ public sealed class ShowplanParserTests
     }
 
     [Fact]
+    public void Parse_CollectsSeekScanPredicatesIntoStatementSummary()
+    {
+        const string xml = """
+            <ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2022/ShowPlan">
+              <BatchSequence>
+                <Batch>
+                  <Statements>
+                    <StmtSimple StatementId="1" StatementText="SELECT * FROM dbo.Orders WHERE Status = 1 AND OrderId = @OrderId">
+                      <QueryPlan>
+                        <RelOp NodeId="1" PhysicalOp="Table Scan" LogicalOp="Table Scan">
+                          <TableScan>
+                            <Object Database="SalesDb" Schema="dbo" Table="Orders" />
+                            <Predicate>
+                              <ScalarOperator ScalarString="[dbo].[Orders].[Status]=(1)" />
+                            </Predicate>
+                          </TableScan>
+                        </RelOp>
+                        <RelOp NodeId="2" PhysicalOp="Clustered Index Seek" LogicalOp="Clustered Index Seek">
+                          <IndexScan>
+                            <Object Database="SalesDb" Schema="dbo" Table="Orders" Index="PK_Orders" IndexKind="Clustered" />
+                            <SeekPredicates>
+                              <SeekPredicateNew>
+                                <SeekKeys>
+                                  <Prefix ScanType="EQ">
+                                    <RangeColumns>
+                                      <ColumnReference Table="[Orders]" Column="OrderId" />
+                                    </RangeColumns>
+                                    <RangeExpressions>
+                                      <ScalarOperator ScalarString="[@OrderId]" />
+                                    </RangeExpressions>
+                                  </Prefix>
+                                </SeekKeys>
+                              </SeekPredicateNew>
+                            </SeekPredicates>
+                          </IndexScan>
+                        </RelOp>
+                        <RelOp NodeId="3" PhysicalOp="Index Scan" LogicalOp="Index Scan">
+                          <IndexScan>
+                            <Object Database="SalesDb" Schema="dbo" Table="Orders" Index="IX_Orders_Status" IndexKind="NonClustered" />
+                          </IndexScan>
+                        </RelOp>
+                      </QueryPlan>
+                    </StmtSimple>
+                  </Statements>
+                </Batch>
+              </BatchSequence>
+            </ShowPlanXML>
+            """;
+
+        var document = parser.Parse(xml);
+
+        var predicateEntries = document.Statements[0].Summary.SeekScanPredicateEntries;
+        Assert.Collection(
+            predicateEntries,
+            item =>
+            {
+                Assert.Equal("1", item.NodeId);
+                Assert.Equal("Table Scan", item.PhysicalOp);
+                Assert.Equal("SalesDb", item.Database);
+                Assert.Equal("dbo", item.Schema);
+                Assert.Equal("Orders", item.Table);
+                Assert.Null(item.Index);
+                Assert.Equal("[dbo].[Orders].[Status]=(1)", item.Predicate);
+                Assert.Null(item.SeekPredicate);
+            },
+            item =>
+            {
+                Assert.Equal("2", item.NodeId);
+                Assert.Equal("Clustered Index Seek", item.PhysicalOp);
+                Assert.Equal("SalesDb", item.Database);
+                Assert.Equal("dbo", item.Schema);
+                Assert.Equal("Orders", item.Table);
+                Assert.Equal("PK_Orders", item.Index);
+                Assert.Equal("Clustered", item.IndexKind);
+                Assert.Null(item.Predicate);
+                Assert.Equal("Prefix (EQ): [Orders].OrderId = [@OrderId]", item.SeekPredicate);
+            });
+        Assert.DoesNotContain(predicateEntries, item => item.NodeId == "3");
+    }
+
+    [Fact]
     public void Parse_CollectsParameterListEntriesIntoStatementSummary()
     {
         const string xml = """

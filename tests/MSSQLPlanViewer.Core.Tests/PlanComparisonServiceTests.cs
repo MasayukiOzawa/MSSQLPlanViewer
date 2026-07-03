@@ -163,6 +163,7 @@ public sealed class PlanComparisonServiceTests
             WaitStatsEntries: Array.Empty<WaitStatEntry>(),
             AccessedObjectEntries: Array.Empty<AccessedObjectEntry>(),
             AccessedIndexEntries: Array.Empty<AccessedIndexEntry>(),
+            SeekScanPredicateEntries: Array.Empty<SeekScanPredicateEntry>(),
             ParameterListEntries: Array.Empty<ParameterListEntry>());
 
         return new StatementPlan(
