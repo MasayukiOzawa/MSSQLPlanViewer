@@ -260,6 +260,9 @@ public partial class Home
     private static string BuildAccessedIndexTableName(AccessedIndexEntry item) =>
         PlanDisplayFormatter.FormatQualifiedTableName(item.Database, item.Schema, item.Table);
 
+    private static string BuildSeekScanPredicateTableName(SeekScanPredicateEntry item) =>
+        PlanDisplayFormatter.FormatQualifiedTableName(item.Database, item.Schema, item.Table);
+
     private static string BuildWarningDisplayText(PlanWarning warning)
     {
         var value = !string.IsNullOrWhiteSpace(warning.Details)

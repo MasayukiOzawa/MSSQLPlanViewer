@@ -112,7 +112,12 @@ public sealed class ShowplanParser : IShowplanParser
                     StatementId: GetAttribute(statementElement, "StatementId") ?? statements.Count.ToString(CultureInfo.InvariantCulture),
                     StatementType: GetAttribute(statementElement, "StatementType") ?? statementElementName,
                     StatementText: GetAttribute(statementElement, "StatementText") ?? "(statement text unavailable)",
-                    Summary: ParseStatementSummary(statementElement, queryPlan, BuildAccessedObjectEntries(rootRelOps), BuildAccessedIndexEntries(nodes)),
+                    Summary: ParseStatementSummary(
+                        statementElement,
+                        queryPlan,
+                        BuildAccessedObjectEntries(rootRelOps),
+                        BuildAccessedIndexEntries(nodes),
+                        BuildSeekScanPredicateEntries(nodes)),
                     Nodes: nodes,
                     Edges: edges,
                     Warnings: ParseStatementWarnings(statementElement, queryPlan),
@@ -183,7 +188,8 @@ public sealed class ShowplanParser : IShowplanParser
         XElement statementElement,
         XElement queryPlanElement,
         IReadOnlyList<AccessedObjectEntry> accessedObjectEntries,
-        IReadOnlyList<AccessedIndexEntry> accessedIndexEntries) =>
+        IReadOnlyList<AccessedIndexEntry> accessedIndexEntries,
+        IReadOnlyList<SeekScanPredicateEntry> seekScanPredicateEntries) =>
         new(
             EstimatedSubtreeCost: GetDecimalAttribute(statementElement, "StatementSubTreeCost"),
             EstimatedRows: GetDoubleAttribute(statementElement, "StatementEstRows"),
@@ -202,6 +208,7 @@ public sealed class ShowplanParser : IShowplanParser
             WaitStatsEntries: BuildWaitStatsEntries(queryPlanElement),
             AccessedObjectEntries: accessedObjectEntries,
             AccessedIndexEntries: accessedIndexEntries,
+            SeekScanPredicateEntries: seekScanPredicateEntries,
             ParameterListEntries: BuildParameterListEntries(queryPlanElement));
 
     private static IReadOnlyList<PlanWarning> ParseStatementWarnings(XElement statementElement, XElement queryPlanElement) =>
@@ -241,6 +248,32 @@ public sealed class ShowplanParser : IShowplanParser
                 ActualLogicalReads: node.RuntimeMetrics.ActualLogicalReads,
                 ActualPhysicalReads: node.RuntimeMetrics.ActualPhysicalReads))
             .ToArray();
+
+    private static IReadOnlyList<SeekScanPredicateEntry> BuildSeekScanPredicateEntries(IEnumerable<PlanNode> nodes) =>
+        nodes
+            .Where(IsObjectSeekOrScan)
+            .Select(node => new SeekScanPredicateEntry(
+                NodeId: node.NodeId,
+                PhysicalOp: node.PhysicalOp,
+                LogicalOp: node.LogicalOp,
+                Database: node.ObjectReference?.Database,
+                Schema: node.ObjectReference?.Schema,
+                Table: node.ObjectReference?.Table,
+                Index: node.ObjectReference?.Index,
+                IndexKind: node.ObjectReference?.IndexKind,
+                Predicate: GetPropertyValue(node.Properties, "Predicate"),
+                SeekPredicate: GetPropertyValue(node.Properties, "Seek predicate")))
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Predicate)
+                || !string.IsNullOrWhiteSpace(entry.SeekPredicate))
+            .ToArray();
+
+    private static bool IsObjectSeekOrScan(PlanNode node) =>
+        node.ObjectReference is not null
+        && (node.PhysicalOp.Contains("Seek", StringComparison.OrdinalIgnoreCase)
+            || node.PhysicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase));
+
+    private static string? GetPropertyValue(IEnumerable<PlanProperty> properties, string name) =>
+        properties.FirstOrDefault(property => string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))?.Value;
 
     private static IReadOnlyList<ParameterListEntry> BuildParameterListEntries(XElement queryPlanElement)
     {
