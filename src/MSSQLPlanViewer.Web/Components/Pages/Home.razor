@@ -501,8 +501,8 @@
                                 <th scope="col">Table</th>
                                 <th scope="col">Index</th>
                                 <th scope="col">Index kind</th>
-                                <th scope="col">Predicate</th>
                                 <th scope="col">Seek predicate</th>
+                                <th scope="col">Predicate</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -521,8 +521,8 @@
                                     <td class="object-cell">@BuildSeekScanPredicateTableName(item)</td>
                                     <td class="object-cell">@FormatSummaryValue(item.Index)</td>
                                     <td>@FormatSummaryValue(item.IndexKind)</td>
-                                    <td class="predicate-cell">@FormatSummaryValue(item.Predicate)</td>
                                     <td class="predicate-cell">@FormatSummaryValue(item.SeekPredicate)</td>
+                                    <td class="predicate-cell">@FormatSummaryValue(item.Predicate)</td>
                                 </tr>
                             }
                         </tbody>
