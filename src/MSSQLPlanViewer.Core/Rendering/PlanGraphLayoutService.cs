@@ -67,7 +67,6 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
                 StringComparer.Ordinal);
 
         var rootNodeIds = PlanTreeNavigator.ResolveRootNodeIds(statement, nodesById);
-
         var positions = BuildPositions(
             statement,
             childrenByParent,
@@ -161,7 +160,6 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
                 .OrderByDescending(nodeId => nodesById[nodeId].EstimatedSubtreeCost ?? 0)
                 .ThenBy(nodeId => nodeId, NodeIdLayoutComparer.Instance)
                 .ToArray();
-
     private static Dictionary<string, (double X, double Y)> BuildPositions(
         StatementPlan statement,
         IReadOnlyDictionary<string, string[]> childrenByParent,
