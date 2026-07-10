@@ -335,7 +335,7 @@ window.mssqlPlanViewerGraphPan = {
         });
 
         window.addEventListener("mousemove", event => {
-            if (activePointerId === null) {
+            if (activePointerId !== "mouse") {
                 return;
             }
 
@@ -343,7 +343,11 @@ window.mssqlPlanViewerGraphPan = {
             updateResizing(event.clientX, event.clientY);
         });
 
-        window.addEventListener("mouseup", stopResizing);
+        window.addEventListener("mouseup", () => {
+            if (activePointerId === "mouse") {
+                stopResizing();
+            }
+        });
     },
 
     resetPanelResizer(panel, options) {
