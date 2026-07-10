@@ -18,6 +18,8 @@ public sealed class LoadedPlan
 
     public string? SelectedStatementId { get; set; }
 
+    public string? SelectedStatementKey { get; set; }
+
     public string? SelectedNodeId { get; set; }
 
     public string? HoveredNodeId { get; set; }

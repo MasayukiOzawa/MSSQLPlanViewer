@@ -28,10 +28,51 @@ public sealed class PlanProjectionTests
         Assert.Equal(nodesById["1"].Y, nodesById["2"].Y);
         Assert.Equal(24, nodesById["0"].X);
         Assert.Equal(12, nodesById["0"].EstimatedRows);
+        Assert.Equal(1, nodesById["0"].EstimatedExecutions);
+        Assert.Equal(0.001m, nodesById["0"].EstimatedCpuCost);
         Assert.Equal(12, nodesById["0"].ActualRows);
+        Assert.Equal(1, nodesById["0"].ActualExecutions);
+        Assert.Equal(1, nodesById["0"].ActualCpuMs);
+        Assert.Equal(2, nodesById["0"].ActualElapsedMs);
         Assert.Contains(nodesById["0"].X, new[] { nodesById["1"].X, nodesById["2"].X });
         Assert.True(nodesById["1"].X > nodesById["0"].X || nodesById["2"].X > nodesById["0"].X);
         Assert.NotEqual(nodesById["1"].X, nodesById["2"].X);
+    }
+
+    [Fact]
+    public void GraphLayout_MarksNodesWithImplicitConversions()
+    {
+        var summary = TestPlanFactory.EmptySummary with
+        {
+            ImplicitConversionEntries = new[]
+            {
+                new ImplicitConversionEntry(
+                    NodeId: "2",
+                    PhysicalOp: "Compute Scalar",
+                    LogicalOp: "Compute Scalar",
+                    Database: null,
+                    Schema: null,
+                    Table: null,
+                    Index: null,
+                    IndexKind: null,
+                    Source: "Defined values",
+                    Expression: "CONVERT_IMPLICIT(int,[Expr1001],0)")
+            }
+        };
+        var statement = TestPlanFactory.Statement(
+            new[]
+            {
+                TestPlanFactory.Node("1", physicalOp: "Index Seek", logicalOp: "Index Seek"),
+                TestPlanFactory.Node("2", physicalOp: "Compute Scalar", logicalOp: "Compute Scalar")
+            },
+            rootNodeIds: new[] { "1", "2" },
+            summary: summary);
+
+        var layout = graphLayoutService.CreateLayout(statement);
+        var implicitConversionByNode = layout.Nodes.ToDictionary(node => node.NodeId, node => node.HasImplicitConversion, StringComparer.Ordinal);
+
+        Assert.False(implicitConversionByNode["1"]);
+        Assert.True(implicitConversionByNode["2"]);
     }
 
     [Fact]
@@ -117,6 +158,41 @@ public sealed class PlanProjectionTests
         Assert.Equal("0", firstChildEdge.FromNodeId);
         Assert.True(firstChildEdge.X1 > firstChildEdge.X2);
         Assert.Equal(firstChildEdge.Y1, firstChildEdge.Y2);
+    }
+
+    [Fact]
+    public void GraphLayout_ScalesOperatorEdgeWidthByFlowRows()
+    {
+        var summary = new StatementPlanSummary(10m, 1, null, null, null, null, null, null, Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<OptimizerStatsUsageEntry>(), Array.Empty<MissingIndexEntry>(), Array.Empty<WaitStatEntry>(), Array.Empty<AccessedObjectEntry>(), Array.Empty<AccessedIndexEntry>(), Array.Empty<SeekScanPredicateEntry>(), Array.Empty<ParameterListEntry>());
+        var statement = new StatementPlan(
+            StatementId: "1",
+            StatementType: "SELECT",
+            StatementText: "SELECT * FROM dbo.NATION",
+            Summary: summary,
+            Nodes: new[]
+            {
+                CreateNode("0", 10m, estimatedRows: 10, actualRows: 10),
+                CreateNode("1", 8m, estimatedRows: 1_000, actualRows: 1_000),
+                CreateNode("2", 2m, estimatedRows: 10, actualRows: 10)
+            },
+            Edges: new[] { new PlanEdge("0", "1"), new PlanEdge("0", "2") },
+            Warnings: Array.Empty<PlanWarning>(),
+            RootNodeIds: new[] { "0" });
+
+        var layout = graphLayoutService.CreateLayout(statement, direction: GraphLayoutDirection.HorizontalSsms);
+
+        var highFlowEdge = Assert.Single(layout.Edges, edge => edge.ToNodeId == "1");
+        var lowFlowEdge = Assert.Single(layout.Edges, edge => edge.ToNodeId == "2");
+        Assert.Equal(1_000d, highFlowEdge.FlowRows.GetValueOrDefault());
+        Assert.Equal(1_000d, highFlowEdge.EstimatedRows.GetValueOrDefault());
+        Assert.Equal(1_000d, highFlowEdge.ActualRows.GetValueOrDefault());
+        Assert.Equal(10d, lowFlowEdge.FlowRows.GetValueOrDefault());
+        Assert.Equal(10d, lowFlowEdge.EstimatedRows.GetValueOrDefault());
+        Assert.Equal(10d, lowFlowEdge.ActualRows.GetValueOrDefault());
+        Assert.True(highFlowEdge.StrokeWidth > lowFlowEdge.StrokeWidth);
+        Assert.InRange(lowFlowEdge.StrokeWidth, 1.6d, 12d);
+        Assert.InRange(highFlowEdge.StrokeWidth, 1.6d, 12d);
+        Assert.True(highFlowEdge.StrokeWidth > 10d);
     }
 
     [Fact]
@@ -284,7 +360,7 @@ public sealed class PlanProjectionTests
                   <Statements>
                     <StmtSimple StatementId="1" StatementText="SELECT 1" StatementSubTreeCost="0.1" StatementEstRows="1">
                       <QueryPlan CachedPlanSize="32">
-                        <RelOp NodeId="0" PhysicalOp="Constant Scan" LogicalOp="Constant Scan" EstimateRows="1" EstimateCPU="0.001" EstimateIO="0" AvgRowSize="8" EstimatedTotalSubtreeCost="0.1" ActualExecutionMode="Row" />
+                        <RelOp NodeId="0" PhysicalOp="Constant Scan" LogicalOp="Constant Scan" EstimateRows="1" EstimateCPU="0.001" EstimateIO="0" AvgRowSize="8" EstimatedTotalSubtreeCost="0.1" EstimatedExecutionMode="Batch" ActualExecutionMode="Row" />
                       </QueryPlan>
                     </StmtSimple>
                   </Statements>
@@ -298,6 +374,48 @@ public sealed class PlanProjectionTests
 
         var property = Assert.Single(node.Properties, item => item.Name == "ActualExecutionMode");
         Assert.Equal("Row", property.Value);
+
+        var layout = graphLayoutService.CreateLayout(document.Statements[0]);
+        Assert.Equal("Batch", layout.Nodes[0].EstimatedExecutionMode);
+        Assert.Equal("Row", layout.Nodes[0].ActualExecutionMode);
+    }
+
+    [Fact]
+    public void Parser_ReadsParallelActualExecutionModeFromThreadOneRuntimeCounter()
+    {
+        const string xml = """
+            <ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2022/ShowPlan" Version="1.2" Build="16.0.1000.6">
+              <BatchSequence>
+                <Batch>
+                  <Statements>
+                    <StmtSimple StatementId="1" StatementText="SELECT 1" StatementSubTreeCost="0.1" StatementEstRows="1">
+                      <QueryPlan CachedPlanSize="32">
+                        <RelOp NodeId="0" PhysicalOp="Compute Scalar" LogicalOp="Compute Scalar" EstimateRows="1" EstimateCPU="0.001" EstimateIO="0" AvgRowSize="8" EstimatedTotalSubtreeCost="0.1" EstimatedExecutionMode="Batch" Parallel="true">
+                          <RunTimeInformation>
+                            <RunTimeCountersPerThread Thread="4" ActualRows="0" ActualExecutions="1" ActualExecutionMode="Batch" ActualElapsedms="0" ActualCPUms="0" />
+                            <RunTimeCountersPerThread Thread="3" ActualRows="0" ActualExecutions="1" ActualExecutionMode="Batch" ActualElapsedms="0" ActualCPUms="0" />
+                            <RunTimeCountersPerThread Thread="2" ActualRows="0" ActualExecutions="1" ActualExecutionMode="Batch" ActualElapsedms="0" ActualCPUms="0" />
+                            <RunTimeCountersPerThread Thread="1" ActualRows="4" ActualExecutions="1" ActualExecutionMode="Batch" ActualElapsedms="1" ActualCPUms="1" />
+                            <RunTimeCountersPerThread Thread="0" ActualRows="0" ActualExecutions="0" ActualExecutionMode="Row" ActualElapsedms="0" ActualCPUms="0" />
+                          </RunTimeInformation>
+                        </RelOp>
+                      </QueryPlan>
+                    </StmtSimple>
+                  </Statements>
+                </Batch>
+              </BatchSequence>
+            </ShowPlanXML>
+            """;
+
+        var document = parser.Parse(xml);
+        var node = document.Statements[0].Nodes[0];
+
+        Assert.Equal("Batch", node.RuntimeMetrics.ActualExecutionMode);
+        Assert.Equal("Batch", node.RuntimeMetrics.Threads.Single(thread => thread.ThreadId == 1).ActualExecutionMode);
+        Assert.Contains(node.Properties, item => item.Name == "ActualExecutionMode" && item.Value == "Batch");
+
+        var layout = graphLayoutService.CreateLayout(document.Statements[0]);
+        Assert.Equal("Batch", layout.Nodes[0].ActualExecutionMode);
     }
 
     [Fact]
@@ -608,8 +726,10 @@ public sealed class PlanProjectionTests
               <BatchSequence>
                 <Batch>
                   <Statements>
-                    <StmtSimple StatementId="1" StatementText="SELECT 1" StatementSubTreeCost="0.1" StatementEstRows="1">
-                      <QueryPlan CachedPlanSize="32" CompileTime="6" CompileCPU="3" CompileMemory="256" EstimatedAvailableMemoryGrant="1024" EstimatedMemoryGrant="128">
+                    <StmtSimple StatementId="1" StatementText="SELECT 1" StatementSubTreeCost="0.1" StatementEstRows="1" CardinalityEstimationModelVersion="160">
+                      <StatementSetOptions QUOTED_IDENTIFIER="true" ANSI_NULLS="true" />
+                      <QueryPlan CachedPlanSize="32" CompileTime="6" CompileCPU="3" CompileMemory="256" EstimatedAvailableMemoryGrant="1024" EstimatedMemoryGrant="128" BatchModeOnRowStoreUsed="true">
+                        <ThreadStat Branches="1" UsedThreads="4" Threads="4" />
                         <MemoryGrantInfo SerialRequiredMemory="64" SerialDesiredMemory="128" GrantedMemory="128" MaxUsedMemory="96" />
                         <OptimizerHardwareDependentProperties EstimatedAvailableMemoryGrant="1024" EstimatedPagesCached="2048" EstimatedAvailableDegreeOfParallelism="4" MaxCompileMemory="8192" />
                         <RelOp NodeId="0" PhysicalOp="Constant Scan" LogicalOp="Constant Scan" EstimateRows="1" EstimateCPU="0.001" EstimateIO="0" AvgRowSize="8" EstimatedTotalSubtreeCost="0.1" />
@@ -622,9 +742,15 @@ public sealed class PlanProjectionTests
             """;
 
         var document = parser.Parse(xml);
-        var summary = document.Statements[0].Summary;
+        var statement = document.Statements[0];
+        var summary = statement.Summary;
 
+        Assert.Contains(statement.StatementProperties, property => property.Name == "CardinalityEstimationModelVersion" && property.Value == "160");
+        Assert.Contains(statement.StatementSetOptionsProperties, property => property.Name == "QUOTED_IDENTIFIER" && property.Value == "true");
         Assert.NotEmpty(summary.QueryPlanProperties);
+        Assert.Contains(summary.QueryPlanProperties, property => property.Name == "BatchModeOnRowStoreUsed" && property.Value == "true");
+        Assert.Single(summary.ThreadStatProperties);
+        Assert.Contains(summary.ThreadStatProperties[0], property => property.Name == "UsedThreads" && property.Value == "4");
         Assert.NotEmpty(summary.MemoryGrantInfoProperties);
         Assert.NotEmpty(summary.OptimizerHardwareDependentProperties);
     }
@@ -988,7 +1114,7 @@ public sealed class PlanProjectionTests
         Assert.Equal("[A].Id", segmentNode.Properties.Single(property => property.Name == "Group by").Value);
     }
 
-    private static PlanNode CreateNode(string nodeId, decimal cost) =>
+    private static PlanNode CreateNode(string nodeId, decimal cost, double estimatedRows = 1, double? actualRows = null) =>
         new(
             NodeId: nodeId,
             PhysicalOp: "Nested Loops",
@@ -996,11 +1122,11 @@ public sealed class PlanProjectionTests
             EstimatedSubtreeCost: cost,
             EstimatedCpuCost: null,
             EstimatedIoCost: null,
-            EstimatedRows: 1,
+            EstimatedRows: estimatedRows,
             AverageRowSize: 1,
             IsParallel: false,
             ObjectReference: null,
-            RuntimeMetrics: new PlanRuntimeMetrics(null, null, null, null, null, null, null, null),
+            RuntimeMetrics: new PlanRuntimeMetrics(actualRows, null, null, null, null, null, null, null),
             Warnings: Array.Empty<PlanWarning>(),
             Properties: Array.Empty<PlanProperty>(),
             XmlAttributes: Array.Empty<PlanProperty>(),

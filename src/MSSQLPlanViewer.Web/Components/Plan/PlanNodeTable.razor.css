@@ -1,13 +1,16 @@
 .table-shell {
+    width: 100%;
+    height: min(65vh, 48rem);
+    min-height: 16rem;
     overflow: auto;
-    max-height: min(65vh, 48rem);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius);
     scrollbar-gutter: stable both-edges;
 }
 
 .plan-table {
     --node-col-width: 5.5rem;
-    --operator-col-width: 20rem;
-    --logical-col-width: 8rem;
+    --operator-col-width: 24rem;
     --object-col-width: 24rem;
     margin-bottom: 0;
     font-size: 0.84rem;
@@ -19,8 +22,8 @@
     position: sticky;
     top: 0;
     z-index: 1;
-    background: #f8fafc;
-    color: #475569;
+    background: var(--app-surface-muted);
+    color: var(--app-text-muted);
     border-bottom-width: 1px;
     font-size: 0.8rem;
     text-transform: uppercase;
@@ -57,10 +60,12 @@
 .plan-table tbody tr {
     cursor: pointer;
     --table-row-bg: #ffffff;
+    --bs-table-bg: var(--table-row-bg);
 }
 
 .plan-table.table-hover > tbody > tr:hover {
     --table-row-bg: #f8fafc;
+    --bs-table-bg: var(--table-row-bg);
 }
 
 .plan-table tbody td {
@@ -69,24 +74,39 @@
 }
 
 .plan-table tbody tr.selected {
-    background: rgba(37, 99, 235, 0.08);
-    --table-row-bg: rgba(37, 99, 235, 0.08);
+    background: #dbeafe;
+    --table-row-bg: #dbeafe;
+    --bs-table-bg: var(--table-row-bg);
 }
 
 .plan-table tbody tr.selected:hover {
-    --table-row-bg: rgba(37, 99, 235, 0.08);
+    --table-row-bg: #dbeafe;
+    --bs-table-bg: var(--table-row-bg);
+}
+
+.plan-table tbody tr.selected > * {
+    --bs-table-bg: var(--table-row-bg);
+    background-color: var(--table-row-bg);
 }
 
 .plan-table tbody tr.scan-row {
-    background: rgba(254, 242, 242, 0.92);
-    --table-row-bg: rgba(254, 242, 242, 0.92);
+    background: #fef2f2;
+    --table-row-bg: #fef2f2;
+    --bs-table-bg: var(--table-row-bg);
 }
 
 .plan-table.table-hover > tbody > tr.scan-row:hover,
 .plan-table tbody tr.selected.scan-row,
 .plan-table tbody tr.selected.scan-row:hover {
-    background: rgba(254, 226, 226, 0.96);
-    --table-row-bg: rgba(254, 226, 226, 0.96);
+    background: #fee2e2;
+    --table-row-bg: #fee2e2;
+    --bs-table-bg: var(--table-row-bg);
+}
+
+.plan-table tbody tr.scan-row > *,
+.plan-table.table-hover > tbody > tr.scan-row:hover > * {
+    --bs-table-bg: var(--table-row-bg);
+    background-color: var(--table-row-bg);
 }
 
 .plan-table td,
@@ -102,11 +122,6 @@
 .plan-table .operator-col {
     min-width: var(--operator-col-width);
     width: var(--operator-col-width);
-}
-
-.plan-table .logical-col {
-    min-width: var(--logical-col-width);
-    width: var(--logical-col-width);
 }
 
 .plan-table .object-col {
@@ -126,10 +141,12 @@
 }
 
 .plan-table tbody td.sticky-col {
-    background: var(--table-row-bg);
+    background-color: var(--table-row-bg);
+    background-clip: padding-box;
 }
 
 .plan-table thead th.sticky-col {
+    background-color: var(--app-surface-muted);
     z-index: 4;
 }
 
@@ -143,7 +160,7 @@
 
 .plan-table .sticky-col-3 {
     left: calc(var(--node-col-width) + var(--operator-col-width));
-    box-shadow: 1px 0 0 #e2e8f0, 12px 0 16px -16px rgba(15, 23, 42, 0.28);
+    box-shadow: 1px 0 0 var(--app-border), 12px 0 16px -16px rgba(15, 23, 42, 0.28);
 }
 
 .plan-table .node-id {
@@ -224,6 +241,15 @@
     font-weight: 600;
     color: #0f172a;
     font-size: 0.83rem;
+    line-height: 1.25;
+}
+
+.tree-logical-op {
+    display: block;
+    margin-top: 0.1rem;
+    color: #64748b;
+    font-weight: 600;
+    font-size: 0.78rem;
 }
 
 .tree-op-icon {

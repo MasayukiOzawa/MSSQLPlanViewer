@@ -26,21 +26,22 @@ else
         </div>
     </div>
 
-    <div class="graph-shell" @ref="graphShellRef">
-        <svg @ref="svgRef"
-             class="graph-canvas"
-             viewBox="@($"0 0 {Layout.Width} {Layout.Height}")"
-             preserveAspectRatio="xMinYMin meet"
-             width="@ScaledWidth"
-             height="@ScaledHeight"
-             role="img"
-             aria-label="Execution plan graph">
+    <div class="graph-resize-frame">
+        <div class="graph-shell" @ref="graphShellRef">
+            <svg @ref="svgRef"
+                 class="graph-canvas"
+                 viewBox="@($"0 0 {Layout.Width} {Layout.Height}")"
+                 preserveAspectRatio="xMinYMin meet"
+                 width="@ScaledWidth"
+                 height="@ScaledHeight"
+                 role="img"
+                 aria-label="Execution plan graph">
             <defs>
-                <marker id="@MarkerId" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
-                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+                <marker id="@MarkerId" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+                    <path d="M 0 0 L 8 4 L 0 8 z" fill="#94a3b8" />
                 </marker>
-                <marker id="@CriticalMarkerId" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
-                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed" />
+                <marker id="@CriticalMarkerId" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+                    <path d="M 0 0 L 8 4 L 0 8 z" fill="#7c3aed" />
                 </marker>
             </defs>
 
@@ -56,7 +57,29 @@ else
                 var isCriticalEdge = ShowCriticalPath && edge.IsOnCriticalPath;
                 <path d="@BuildEdgePath(edge, Layout.Direction)"
                       class="@(isCriticalEdge ? "graph-edge critical-path" : "graph-edge")"
+                      style="@BuildEdgeStrokeStyle(edge, isCriticalEdge)"
                       marker-end="@($"url(#{(isCriticalEdge ? CriticalMarkerId : MarkerId)})")" />
+            }
+
+            @foreach (var edge in Layout.Edges)
+            {
+                var edgeFlowLabel = BuildEdgeFlowLabel(edge, Layout.Direction);
+                @if (edgeFlowLabel is not null)
+                {
+                    <g class="edge-flow-label" aria-hidden="true">
+                        <rect x="@(edgeFlowLabel.X - (edgeFlowLabel.Width / 2d))"
+                              y="@(edgeFlowLabel.Y - 26d)"
+                              width="@edgeFlowLabel.Width"
+                              height="@edgeFlowLabel.Height"
+                              rx="6"
+                              ry="6"
+                              class="edge-flow-label-bg" />
+                        <text x="@edgeFlowLabel.LabelX" y="@(edgeFlowLabel.Y - 8d)" class="edge-flow-label-text edge-flow-label-name">@edgeFlowLabel.EstimatedRowsName</text>
+                        <text x="@edgeFlowLabel.ValueX" y="@(edgeFlowLabel.Y - 8d)" class="edge-flow-label-text edge-flow-label-value">@edgeFlowLabel.EstimatedRowsValue</text>
+                        <text x="@edgeFlowLabel.LabelX" y="@(edgeFlowLabel.Y + 11d)" class="edge-flow-label-text edge-flow-label-name">@edgeFlowLabel.ActualRowsName</text>
+                        <text x="@edgeFlowLabel.ValueX" y="@(edgeFlowLabel.Y + 11d)" class="edge-flow-label-text edge-flow-label-value">@edgeFlowLabel.ActualRowsValue</text>
+                    </g>
+                }
             }
 
             @if (Layout.StatementNode is not null)
@@ -76,7 +99,6 @@ else
                    data-statement-id="@statementNode.StatementId"
                    @onclick="@(() => SelectStatement(statementNode.StatementId))">
                     <rect x="@bodyX" y="@bodyY" width="@statementNode.Width" height="@statementNode.Height" rx="18" ry="18" class="statement-node-body" />
-                    <rect x="@bodyX" y="@bodyY" width="@statementNode.Width" height="6" rx="18" ry="18" class="statement-node-accent" />
                     <rect x="@iconTileX" y="@iconTileY" width="34" height="34" rx="10" ry="10" class="statement-node-icon-tile" />
                     <g class="statement-node-icon" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
                         <rect x="@iconOriginX" y="@iconOriginY" width="20" height="20" rx="3"></rect>
@@ -86,12 +108,6 @@ else
                     </g>
                     <text x="@contentX" y="@contentY" class="graph-title">
                         @Trim(statementNode.PrimaryLabel, 30)
-                    </text>
-                    <text x="@contentX" y="@(contentY + 21)" class="graph-subtitle">
-                        @Trim(statementNode.SecondaryLabel, 30)
-                    </text>
-                    <text x="@contentX" y="@(contentY + 42)" class="graph-meta">
-                        Statement @statementNode.StatementId | Query cost @PlanDisplayFormatter.FormatPercent(statementNode.CostRatio)
                     </text>
                 </g>
             }
@@ -104,24 +120,36 @@ else
                 var bodyX = node.X;
                 var bodyY = node.Y;
                 var iconTileX = bodyX + 16;
-                var iconTileY = bodyY + 18;
+                var iconTileY = bodyY + 40;
                 var iconOriginX = iconTileX + 8;
                 var iconOriginY = iconTileY + 8;
+                var parallelBadgeX = iconTileX + 3.5d;
+                var parallelBadgeY = iconTileY + 40d;
+                var implicitConversionBadgeX = iconTileX + 3.5d;
+                var implicitConversionBadgeY = iconTileY + (node.IsParallel ? 70d : 40d);
                 var isCriticalNode = ShowCriticalPath && node.IsOnCriticalPath;
                 var costEmphasisLevel = ResolveCostEmphasisLevel(node);
                 var costEmphasisStyle = GraphCostEmphasis.GetStyle(costEmphasisLevel);
                 var isCostEmphasized = GraphCostEmphasis.IsEmphasized(costEmphasisLevel);
                 var hasDashedOutline = isCostEmphasized;
                 var contentX = bodyX + 66;
-                var contentY = bodyY + 29;
+                var metricValueX = bodyX + node.Width - 24;
+                var nodeIdLabel = $"Node {node.NodeId}";
+                var nodeIdTextX = bodyX + (node.Width / 2d);
+                var nodeIdTextY = bodyY + 17d;
+                var headerBandHeight = 24d;
+                var accentY = bodyY + headerBandHeight;
+                var contentY = bodyY + 47;
                 var meterRatio = (double)Math.Max(0.08m, node.CostRatio);
                 var meterWidth = Math.Max(18d, (node.Width - 32) * meterRatio);
                 var meterHeight = isCostEmphasized ? 7d : 4d;
-                var meterY = bodyY + node.Height - (isCostEmphasized ? 15d : 12d);
-                var badgeWidth = 84d;
-                var badgeHeight = 24d;
-                var badgeX = bodyX + node.Width - badgeWidth - 12d;
-                var badgeY = bodyY - 12d;
+                var meterY = bodyY + node.Height - (isCostEmphasized ? 9d : 7d);
+                var secondaryLabels = BuildSecondaryLabels(node);
+                var hasIndexLabel = !string.IsNullOrWhiteSpace(secondaryLabels.IndexLabel);
+                var nodeMetaY = contentY + (hasIndexLabel ? 62 : 47);
+                var nodeMetricRows = BuildNodeMetricRows(node);
+                var nodeMetricY = nodeMetaY;
+                NodeMetricGroup? previousNodeMetricGroup = null;
 
                 <g class="@GetNodeClass(node, isSelected, isScan, hasDashedOutline, isCriticalNode, costEmphasisLevel)"
                    data-node-id="@node.NodeId"
@@ -138,7 +166,10 @@ else
                         <rect x="@(bodyX - 9)" y="@(bodyY - 9)" width="@(node.Width + 18)" height="@(node.Height + 18)" rx="27" ry="27" class="scan-frame" />
                     }
                     <rect x="@bodyX" y="@bodyY" width="@node.Width" height="@node.Height" rx="18" ry="18" class="node-body" fill="@GetCardFill(node, isSelected)" stroke="@GetCardStroke(node, isSelected)" />
-                    <rect x="@bodyX" y="@bodyY" width="@node.Width" height="6" rx="18" ry="18" class="node-accent" fill="@GetAccentFill(node, icon)" />
+                    <rect x="@(bodyX + 1)" y="@(bodyY + 1)" width="@(node.Width - 2)" height="@headerBandHeight" rx="17" ry="17" class="node-header-band" />
+                    <rect x="@(bodyX + 1)" y="@(bodyY + 12)" width="@(node.Width - 2)" height="13" class="node-header-band-base" />
+                    <rect x="@bodyX" y="@accentY" width="@node.Width" height="5" class="node-accent" fill="@GetAccentFill(node, icon)" />
+                    <text x="@nodeIdTextX" y="@nodeIdTextY" class="node-id-label">@nodeIdLabel</text>
                     @if (hasDashedOutline)
                     {
                         <rect x="@(bodyX - 6)" y="@(bodyY - 6)" width="@(node.Width + 12)" height="@(node.Height + 12)" rx="24" ry="24" class="node-cost-highlight" stroke="@costEmphasisStyle.OutlineStroke" />
@@ -147,12 +178,7 @@ else
                     {
                         <rect x="@(bodyX - 3)" y="@(bodyY - 3)" width="@(node.Width + 6)" height="@(node.Height + 6)" rx="21" ry="21" class="node-critical-path" />
                     }
-                    @if (isCostEmphasized)
-                    {
-                        <rect x="@badgeX" y="@badgeY" width="@badgeWidth" height="@badgeHeight" rx="12" ry="12" class="node-cost-badge" fill="@costEmphasisStyle.BadgeFill" stroke="@costEmphasisStyle.BadgeStroke" />
-                    }
-                    <text x="@(badgeX + badgeWidth / 2)" y="@(badgeY + 16)" class="node-cost-badge-text" fill="@costEmphasisStyle.BadgeTextFill" style="@GetCostBadgeTextStyle(isCostEmphasized)">Cost @PlanDisplayFormatter.FormatPercent(node.CostRatio)</text>
-                    <rect x="@iconTileX" y="@iconTileY" width="34" height="34" rx="10" ry="10" class="node-icon-tile" fill="@GetIconTileFill(isSelected)" />
+                    <rect x="@iconTileX" y="@iconTileY" width="34" height="34" rx="10" ry="10" class="node-icon-tile" fill="@GetIconTileFill(isSelected, isCriticalNode)" />
 
                     <g class="node-icon" stroke="@GetAccentFill(node, icon)" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
                         @switch (icon.Kind)
@@ -236,24 +262,67 @@ else
                                 break;
                         }
                     </g>
+                    @if (node.IsParallel)
+                    {
+                        <g class="parallel-badge">
+                            <rect x="@parallelBadgeX" y="@parallelBadgeY" width="27" height="25" rx="7" ry="7" class="parallel-badge-body" />
+                            <line x1="@(parallelBadgeX + 7)" y1="@(parallelBadgeY + 6)" x2="@(parallelBadgeX + 7)" y2="@(parallelBadgeY + 16)" class="parallel-badge-thread" />
+                            <line x1="@(parallelBadgeX + 13.5)" y1="@(parallelBadgeY + 4)" x2="@(parallelBadgeX + 13.5)" y2="@(parallelBadgeY + 16)" class="parallel-badge-thread" />
+                            <line x1="@(parallelBadgeX + 20)" y1="@(parallelBadgeY + 6)" x2="@(parallelBadgeX + 20)" y2="@(parallelBadgeY + 16)" class="parallel-badge-thread" />
+                            <path d="@($"M {parallelBadgeX + 5} {parallelBadgeY + 18} C {parallelBadgeX + 10} {parallelBadgeY + 22}, {parallelBadgeX + 17} {parallelBadgeY + 22}, {parallelBadgeX + 22} {parallelBadgeY + 18}")" class="parallel-badge-flow" />
+                            <path d="@($"M {parallelBadgeX + 19} {parallelBadgeY + 16} L {parallelBadgeX + 23} {parallelBadgeY + 18} L {parallelBadgeX + 19} {parallelBadgeY + 20}")" class="parallel-badge-flow" />
+                        </g>
+                    }
+                    @if (node.HasImplicitConversion)
+                    {
+                        <g class="implicit-conversion-badge">
+                            <title>Implicit conversion</title>
+                            <rect x="@implicitConversionBadgeX" y="@implicitConversionBadgeY" width="27" height="25" rx="7" ry="7" class="implicit-conversion-badge-body" />
+                            <path d="@($"M {implicitConversionBadgeX + 7} {implicitConversionBadgeY + 8} H {implicitConversionBadgeX + 18} L {implicitConversionBadgeX + 15} {implicitConversionBadgeY + 5} M {implicitConversionBadgeX + 18} {implicitConversionBadgeY + 8} L {implicitConversionBadgeX + 15} {implicitConversionBadgeY + 11}")" class="implicit-conversion-badge-arrow" />
+                            <path d="@($"M {implicitConversionBadgeX + 20} {implicitConversionBadgeY + 16} H {implicitConversionBadgeX + 9} L {implicitConversionBadgeX + 12} {implicitConversionBadgeY + 13} M {implicitConversionBadgeX + 9} {implicitConversionBadgeY + 16} L {implicitConversionBadgeX + 12} {implicitConversionBadgeY + 19}")" class="implicit-conversion-badge-arrow" />
+                            <text x="@(implicitConversionBadgeX + 13.5d)" y="@(implicitConversionBadgeY + 15d)" class="implicit-conversion-badge-type">T</text>
+                        </g>
+                    }
 
                     <text x="@contentX" y="@contentY" class="graph-title">
                         @Trim(node.PrimaryLabel, 30)
                     </text>
                     <text x="@contentX" y="@(contentY + 21)" class="graph-subtitle">
-                        @Trim(node.SecondaryLabel, 30)
+                        @secondaryLabels.TableLabel
                     </text>
-                    <text x="@contentX" y="@(contentY + 40)" class="graph-meta">
-                        Node @node.NodeId | Cost @PlanDisplayFormatter.FormatPercent(node.CostRatio)
+                    <text x="@contentX" y="@(contentY + 36)" class="graph-subtitle graph-index-label">
+                        @secondaryLabels.IndexLabel
                     </text>
-                    <text x="@contentX" y="@(contentY + 56)" class="graph-meta graph-rows">
-                        @BuildRowsLabel(node)
-                    </text>
+                    @if (nodeMetricRows.Count > 0 && HasVisibleSecondaryLabel(secondaryLabels))
+                    {
+                        var headerSeparatorY = nodeMetricY - MetricSeparatorBottomMargin;
+                        <line x1="@contentX" y1="@headerSeparatorY" x2="@(bodyX + node.Width - 18)" y2="@headerSeparatorY" class="node-metric-separator" />
+                    }
+                    @foreach (var metric in nodeMetricRows)
+                    {
+                        if (previousNodeMetricGroup.HasValue && previousNodeMetricGroup.Value != metric.Group)
+                        {
+                            var separatorY = ResolveMetricSeparatorY(nodeMetricY, metric.Spacing);
+                            <line x1="@contentX" y1="@separatorY" x2="@(bodyX + node.Width - 18)" y2="@separatorY" class="node-metric-separator" />
+                        }
+
+                        nodeMetricY += metric.Spacing;
+                        previousNodeMetricGroup = metric.Group;
+                        <g class="node-metric-row">
+                            <text x="@contentX" y="@nodeMetricY" class="graph-meta graph-rows node-metric-label">
+                                @metric.Label
+                            </text>
+                            <text x="@metricValueX" y="@nodeMetricY" class="graph-meta graph-rows node-metric-value">
+                                @metric.Value
+                            </text>
+                        </g>
+                    }
                     <rect x="@(bodyX + 16)" y="@meterY" width="@(node.Width - 32)" height="@meterHeight" rx="@(meterHeight / 2)" ry="@(meterHeight / 2)" class="@GetMeterTrackClass(isCostEmphasized)" />
                     <rect x="@(bodyX + 16)" y="@meterY" width="@meterWidth" height="@meterHeight" rx="@(meterHeight / 2)" ry="@(meterHeight / 2)" class="node-meter-fill" fill="@GetMeterFill(node, icon, costEmphasisLevel)" />
                 </g>
             }
-        </svg>
+            </svg>
+        </div>
     </div>
 }
 
@@ -288,6 +357,7 @@ else
     private const decimal ZoomStep = 0.2m;
     private const decimal MinZoom = 0.6m;
     private const decimal MaxZoom = 2.2m;
+    private const double MetricSeparatorBottomMargin = 15d;
     private decimal zoom = 1.0m;
     private string? previousStatementId;
     private string? previousSelectedNodeId;
@@ -299,6 +369,18 @@ else
     private ElementReference svgRef;
 
     private string? exportError;
+
+    private sealed record EdgeFlowLabel(
+        string EstimatedRowsName,
+        string EstimatedRowsValue,
+        string ActualRowsName,
+        string ActualRowsValue,
+        double X,
+        double Y,
+        double Width,
+        double Height,
+        double LabelX,
+        double ValueX);
 
     private bool CanZoomIn => zoom < MaxZoom;
 
@@ -443,6 +525,56 @@ else
         return $"M {edge.X1} {edge.Y1} C {controlX1} {edge.Y1}, {controlX2} {edge.Y2}, {edge.X2} {edge.Y2}";
     }
 
+    private static string BuildEdgeStrokeStyle(GraphEdgeLayout edge, bool isCriticalEdge)
+    {
+        var strokeWidth = isCriticalEdge
+            ? Math.Max(edge.StrokeWidth, 5d)
+            : edge.StrokeWidth;
+
+        return $"stroke-width: {strokeWidth.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}px";
+    }
+
+    private static EdgeFlowLabel? BuildEdgeFlowLabel(GraphEdgeLayout edge, GraphLayoutDirection direction)
+    {
+        if (!edge.EstimatedRows.HasValue && !edge.ActualRows.HasValue)
+        {
+            return null;
+        }
+
+        const string estimatedRowsName = "Est rows";
+        const string actualRowsName = "Act rows";
+        var estimatedRowsValue = PlanDisplayFormatter.FormatNumber(edge.EstimatedRows);
+        var actualRowsValue = PlanDisplayFormatter.FormatNumber(edge.ActualRows);
+        var maxNameLength = Math.Max(estimatedRowsName.Length, actualRowsName.Length);
+        var maxValueLength = Math.Max(estimatedRowsValue.Length, actualRowsValue.Length);
+        var width = Math.Clamp(((maxNameLength + maxValueLength) * 6.3d) + 34d, 112d, 192d);
+        var (x, y) = ResolveEdgeFlowLabelPosition(edge, direction, width);
+
+        return new EdgeFlowLabel(
+            estimatedRowsName,
+            estimatedRowsValue,
+            actualRowsName,
+            actualRowsValue,
+            X: x,
+            Y: y,
+            Width: width,
+            Height: 44d,
+            LabelX: x - (width / 2d) + 12d,
+            ValueX: x + (width / 2d) - 12d);
+    }
+
+    private static (double X, double Y) ResolveEdgeFlowLabelPosition(GraphEdgeLayout edge, GraphLayoutDirection direction, double width)
+    {
+        var lineX = (edge.X1 + edge.X2) / 2d;
+        var lineY = (edge.Y1 + edge.Y2) / 2d;
+        var horizontalClearance = 30d + (edge.StrokeWidth / 2d);
+        var verticalClearance = 18d + (edge.StrokeWidth / 2d);
+
+        return direction == GraphLayoutDirection.HorizontalSsms
+            ? (lineX, lineY - horizontalClearance)
+            : (lineX + (width / 2d) + verticalClearance, lineY);
+    }
+
     private string GetNodeClass(GraphNodeLayout node, bool isSelected, bool isScan, bool hasDashedOutline, bool isCriticalNode, GraphCostEmphasisLevel costEmphasisLevel)
     {
         var classes = new List<string> { "graph-node" };
@@ -534,8 +666,15 @@ else
             ? GraphCostEmphasis.GetStyle(costEmphasisLevel).MeterFill
             : GetAccentFill(node, icon);
 
-    private static string GetIconTileFill(bool isSelected) =>
-        isSelected ? "#dbeafe" : "#f8fafc";
+    private static string GetIconTileFill(bool isSelected, bool isCriticalNode)
+    {
+        if (isSelected)
+        {
+            return "#dbeafe";
+        }
+
+        return isCriticalNode ? "#ede9fe" : "#f8fafc";
+    }
 
     private GraphCostEmphasisLevel ResolveCostEmphasisLevel(GraphNodeLayout node) =>
         GraphCostEmphasis.Resolve(node.CostRatio, CostHighlightThresholdPercent);
@@ -543,16 +682,91 @@ else
     private static string GetMeterTrackClass(bool isCostEmphasized) =>
         isCostEmphasized ? "node-meter-track is-emphasized" : "node-meter-track";
 
-    private static string GetCostBadgeTextStyle(bool isCostEmphasized) =>
-        isCostEmphasized ? "text-anchor: middle;" : "text-anchor: middle; visibility: hidden;";
-
     private static bool IsScanOperator(GraphNodeLayout node, OperatorIconDescriptor icon) =>
         icon.Kind is OperatorIconKind.Scan or OperatorIconKind.ConstantScan
         || node.PhysicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase)
         || node.LogicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase);
 
-    private static string BuildRowsLabel(GraphNodeLayout node) =>
-        $"Est rows {PlanDisplayFormatter.FormatNumber(node.EstimatedRows)} | Actual {PlanDisplayFormatter.FormatNumber(node.ActualRows)}";
+    private static double ResolveMetricSeparatorY(double currentMetricY, double nextMetricSpacing) =>
+        currentMetricY + Math.Max(4d, nextMetricSpacing - MetricSeparatorBottomMargin);
+
+    private static IReadOnlyList<NodeMetricRow> BuildNodeMetricRows(GraphNodeLayout node)
+    {
+        var rows = new List<NodeMetricRow>
+        {
+            new("Cost", PlanDisplayFormatter.FormatPercent(node.CostRatio), 0, NodeMetricGroup.Cost)
+        };
+
+        AddNumberMetric(rows, "Average Row Size", node.AverageRowSize, 22, NodeMetricGroup.AverageRowSize);
+        AddNumberMetric(rows, "Estimated Rows", node.EstimatedRows, 22, NodeMetricGroup.Estimated);
+        AddNumberMetric(rows, "Estimated Executions", node.EstimatedExecutions, 14, NodeMetricGroup.Estimated);
+        AddTextMetric(rows, "Estimated Mode", node.EstimatedExecutionMode, 14, NodeMetricGroup.Estimated);
+        AddNumberMetric(rows, "Actual Rows", node.ActualRows, 22, NodeMetricGroup.Actual);
+        AddNumberMetric(rows, "Actual Executions", node.ActualExecutions, 14, NodeMetricGroup.Actual);
+        AddTextMetric(rows, "Actual Mode", node.ActualExecutionMode, 14, NodeMetricGroup.Actual);
+        AddNumberMetric(rows, "Actual Logical Reads", node.ActualLogicalReads, 14, NodeMetricGroup.Actual);
+        AddNumberMetric(rows, "Actual Physical Reads", node.ActualPhysicalReads, 14, NodeMetricGroup.Actual);
+        AddMillisecondsMetric(rows, "Actual CPU", node.ActualCpuMs, 14, NodeMetricGroup.Actual);
+        AddMillisecondsMetric(rows, "Actual Elapsed", node.ActualElapsedMs, 14, NodeMetricGroup.Actual);
+
+        return rows;
+    }
+
+    private static void AddNumberMetric(ICollection<NodeMetricRow> rows, string label, double? value, double spacing, NodeMetricGroup group)
+    {
+        if (value.HasValue)
+        {
+            rows.Add(new NodeMetricRow(label, PlanDisplayFormatter.FormatNumber(value), spacing, group));
+        }
+    }
+
+    private static void AddTextMetric(ICollection<NodeMetricRow> rows, string label, string? value, double spacing, NodeMetricGroup group)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            rows.Add(new NodeMetricRow(label, value, spacing, group));
+        }
+    }
+
+    private static void AddMillisecondsMetric(ICollection<NodeMetricRow> rows, string label, double? value, double spacing, NodeMetricGroup group)
+    {
+        if (value.HasValue)
+        {
+            rows.Add(new NodeMetricRow(label, FormatMilliseconds(value.Value), spacing, group));
+        }
+    }
+
+    private static string FormatMilliseconds(double value) =>
+        $"{PlanDisplayFormatter.FormatNumber(value)} ms";
+
+    private static NodeSecondaryLabels BuildSecondaryLabels(GraphNodeLayout node)
+    {
+        const string separator = " / ";
+        var separatorIndex = node.SecondaryLabel.IndexOf(separator, StringComparison.Ordinal);
+        if (separatorIndex < 0)
+        {
+            return new NodeSecondaryLabels(Trim(node.SecondaryLabel, 30), null);
+        }
+
+        var tableLabel = node.SecondaryLabel[..separatorIndex];
+        var indexLabel = node.SecondaryLabel[(separatorIndex + separator.Length)..];
+        return new NodeSecondaryLabels(Trim(tableLabel, 30), Trim(indexLabel, 30));
+    }
+
+    private static bool HasVisibleSecondaryLabel(NodeSecondaryLabels labels) =>
+        !string.IsNullOrWhiteSpace(labels.TableLabel) || !string.IsNullOrWhiteSpace(labels.IndexLabel);
+
+    private enum NodeMetricGroup
+    {
+        Cost,
+        AverageRowSize,
+        Estimated,
+        Actual
+    }
+
+    private sealed record NodeMetricRow(string Label, string Value, double Spacing, NodeMetricGroup Group);
+
+    private sealed record NodeSecondaryLabels(string TableLabel, string? IndexLabel);
 
     private static string Trim(string text, int maxLength) =>
         text.Length <= maxLength ? text : $"{text[..(maxLength - 1)]}…";

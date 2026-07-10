@@ -6,7 +6,7 @@
 
 .diagnostics-empty {
     margin: 0;
-    color: #64748b;
+    color: var(--app-text-subtle);
     font-size: 0.86rem;
 }
 
@@ -20,9 +20,9 @@
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    border: 1px solid #cbd5e1;
-    border-radius: 999px;
-    background: #f8fafc;
+    border: 1px solid var(--app-border-strong);
+    border-radius: var(--app-radius);
+    background: var(--app-surface-muted);
     color: #334155;
     padding: 0.32rem 0.65rem;
     font-size: 0.78rem;
@@ -46,6 +46,9 @@
 
 .diagnostics-table-shell {
     overflow: auto;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius);
+    scrollbar-gutter: stable both-edges;
 }
 
 .diagnostics-table {
@@ -56,8 +59,8 @@
 }
 
 .diagnostics-table th {
-    background: #f8fafc;
-    color: #475569;
+    background: var(--app-surface-muted);
+    color: var(--app-text-muted);
     font-size: 0.74rem;
     letter-spacing: 0.05em;
     text-transform: uppercase;

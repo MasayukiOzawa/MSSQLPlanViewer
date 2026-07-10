@@ -24,7 +24,7 @@ public sealed class PlanWorkspaceService(
         var firstStatement = document.Statements.FirstOrDefault();
         if (firstStatement is not null)
         {
-            SelectStatement(plan, firstStatement.StatementId, layoutDirection);
+            SelectResolvedStatement(plan, firstStatement, layoutDirection);
         }
 
         return plan;
@@ -42,7 +42,31 @@ public sealed class PlanWorkspaceService(
             return;
         }
 
+        SelectResolvedStatement(plan, statement, layoutDirection);
+    }
+
+    public void SelectStatementByKey(
+        LoadedPlan plan,
+        string statementKey,
+        GraphLayoutDirection layoutDirection)
+    {
+        var statement = plan.Document.Statements.FirstOrDefault(item => item.StatementKey == statementKey)
+            ?? plan.Document.Statements.FirstOrDefault();
+        if (statement is null)
+        {
+            return;
+        }
+
+        SelectResolvedStatement(plan, statement, layoutDirection);
+    }
+
+    private void SelectResolvedStatement(
+        LoadedPlan plan,
+        StatementPlan statement,
+        GraphLayoutDirection layoutDirection)
+    {
         plan.SelectedStatementId = statement.StatementId;
+        plan.SelectedStatementKey = statement.StatementKey;
         plan.SelectedLayout = graphLayoutService.CreateLayout(
             statement,
             CalculateStatementCostRatio(plan.Document, statement),

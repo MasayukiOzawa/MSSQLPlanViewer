@@ -1,6 +1,6 @@
 .page {
     min-height: 100vh;
-    background: #f8fafc;
+    background: var(--app-bg);
 }
 
 main {
@@ -11,9 +11,9 @@ main {
     position: sticky;
     top: 0;
     z-index: 10;
-    background: rgba(248, 250, 252, 0.92);
+    background: rgba(246, 248, 251, 0.94);
     backdrop-filter: blur(10px);
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--app-border);
     min-height: 4.5rem;
     display: flex;
     align-items: center;
@@ -35,11 +35,11 @@ main {
 .top-row-title {
     font-size: 1rem;
     font-weight: 700;
-    color: #0f172a;
+    color: var(--app-text);
 }
 
 .top-row-subtitle {
-    color: #475569;
+    color: var(--app-text-muted);
     font-size: 0.92rem;
 }
 
@@ -48,9 +48,9 @@ main {
     align-items: center;
     gap: 0.35rem;
     padding: 0.2rem;
-    border: 1px solid #cbd5e1;
-    border-radius: 0.5rem;
-    background: #fff;
+    border: 1px solid var(--app-border-strong);
+    border-radius: var(--app-radius);
+    background: var(--app-surface);
 }
 
 .top-nav ::deep .top-nav-link {
@@ -59,8 +59,8 @@ main {
     justify-content: center;
     min-height: 2rem;
     padding: 0.35rem 0.75rem;
-    border-radius: 0.35rem;
-    color: #475569;
+    border-radius: 6px;
+    color: var(--app-text-muted);
     font-size: 0.86rem;
     font-weight: 700;
     text-decoration: none;
@@ -68,12 +68,12 @@ main {
 }
 
 .top-nav ::deep .top-nav-link:hover {
-    color: #1d4ed8;
+    color: var(--app-primary);
     background: #eff6ff;
 }
 
 .top-nav ::deep .top-nav-link.active {
-    color: #1d4ed8;
+    color: var(--app-primary);
     background: #eff6ff;
     box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
 }

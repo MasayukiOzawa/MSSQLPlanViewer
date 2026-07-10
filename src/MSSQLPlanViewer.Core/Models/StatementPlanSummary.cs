@@ -19,4 +19,9 @@ public sealed record StatementPlanSummary(
     IReadOnlyList<AccessedObjectEntry> AccessedObjectEntries,
     IReadOnlyList<AccessedIndexEntry> AccessedIndexEntries,
     IReadOnlyList<SeekScanPredicateEntry> SeekScanPredicateEntries,
-    IReadOnlyList<ParameterListEntry> ParameterListEntries);
+    IReadOnlyList<ParameterListEntry> ParameterListEntries)
+{
+    public IReadOnlyList<IReadOnlyList<PlanProperty>> ThreadStatProperties { get; init; } = Array.Empty<IReadOnlyList<PlanProperty>>();
+
+    public IReadOnlyList<ImplicitConversionEntry> ImplicitConversionEntries { get; init; } = Array.Empty<ImplicitConversionEntry>();
+}

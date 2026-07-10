@@ -41,11 +41,32 @@ else if (Node is null)
             </div>
         }
 
+        @for (var threadStatIndex = 0; threadStatIndex < Statement.Summary.ThreadStatProperties.Count; threadStatIndex++)
+        {
+            var threadStatProperties = Statement.Summary.ThreadStatProperties[threadStatIndex];
+            var threadStatLabel = Statement.Summary.ThreadStatProperties.Count == 1
+                ? "ThreadStat"
+                : $"ThreadStat #{(threadStatIndex + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+            <div class="xml-attributes-section">
+                <div class="details-label">@threadStatLabel attributes (@FormatCount(threadStatProperties.Count))</div>
+                @RenderXmlAttributesTable(threadStatProperties)
+            </div>
+        }
+
         @if (Statement.Summary.MemoryGrantInfoProperties.Count > 0)
         {
             <div class="xml-attributes-section">
                 <div class="details-label">MemoryGrantInfo attributes (@FormatCount(Statement.Summary.MemoryGrantInfoProperties.Count))</div>
                 @RenderXmlAttributesTable(Statement.Summary.MemoryGrantInfoProperties)
+            </div>
+        }
+
+        @if (Statement.Summary.OptimizerHardwareDependentProperties.Count > 0)
+        {
+            <div class="xml-attributes-section">
+                <div class="details-label">OptimizerHardwareDependentProperties attributes (@FormatCount(Statement.Summary.OptimizerHardwareDependentProperties.Count))</div>
+                @RenderXmlAttributesTable(Statement.Summary.OptimizerHardwareDependentProperties)
             </div>
         }
 
@@ -78,35 +99,10 @@ else
             }
         </dl>
 
-        @if (Node.XmlAttributes.Count > 0)
-        {
-            <div class="xml-attributes-section">
-                <div class="details-label">XML attributes (@FormatCount(Node.XmlAttributes.Count))</div>
-                @RenderXmlAttributesTable(Node.XmlAttributes)
-            </div>
-        }
-
-        @if (showDetail && Node.DetailXmlAttributes.Count > 0)
-        {
-            <div class="xml-attributes-section detail-xml-attributes-section">
-                <div class="details-label">All XML attributes (@FormatCount(Node.DetailXmlAttributes.Count))</div>
-                @RenderXmlAttributesTable(Node.DetailXmlAttributes)
-            </div>
-        }
-
         @if (Node.RuntimeMetrics.Threads.Count > 1)
         {
-            var threadStatistics = ThreadDistributionStatistics.Compute(Node.RuntimeMetrics.Threads);
             <div class="thread-counters-section">
                 <div class="details-label">Per-thread counters</div>
-                @if (threadStatistics is not null)
-                {
-                    <div class="thread-skew-summary">
-                        <span>@threadStatistics.WorkerThreadCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) workers</span>
-                        <span>Max/avg @FormatNumber(threadStatistics.MaxToAverageRatio)</span>
-                        <span>CV @FormatNumber(threadStatistics.CoefficientOfVariation)</span>
-                    </div>
-                }
                 <div class="details-table-shell">
                     <table class="table table-sm align-middle details-table thread-counters-table">
                         <thead>
@@ -136,6 +132,22 @@ else
                         </tbody>
                     </table>
                 </div>
+            </div>
+        }
+
+        @if (Node.XmlAttributes.Count > 0)
+        {
+            <div class="xml-attributes-section">
+                <div class="details-label">XML attributes (@FormatCount(Node.XmlAttributes.Count))</div>
+                @RenderXmlAttributesTable(Node.XmlAttributes)
+            </div>
+        }
+
+        @if (showDetail && Node.DetailXmlAttributes.Count > 0)
+        {
+            <div class="xml-attributes-section detail-xml-attributes-section">
+                <div class="details-label">All XML attributes (@FormatCount(Node.DetailXmlAttributes.Count))</div>
+                @RenderXmlAttributesTable(Node.DetailXmlAttributes)
             </div>
         }
 

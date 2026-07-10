@@ -12,6 +12,12 @@ public sealed record StatementPlan(
 {
     public int WarningCount => Warnings.Count + Nodes.Sum(node => node.Warnings.Count);
 
+    public int BatchNumber { get; init; } = 1;
+
+    public int StatementOrdinal { get; init; } = 1;
+
+    public string StatementKey => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{BatchNumber}:{StatementOrdinal}:{StatementId}");
+
     public string StatementElementName { get; init; } = "Statement";
 
     public IReadOnlyList<PlanProperty> StatementProperties { get; init; } = Array.Empty<PlanProperty>();
