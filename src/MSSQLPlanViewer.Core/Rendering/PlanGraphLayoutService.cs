@@ -53,20 +53,21 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
         }
 
         var nodesById = statement.Nodes.ToDictionary(node => node.NodeId, StringComparer.Ordinal);
+        var isHorizontal = direction == GraphLayoutDirection.HorizontalSsms;
         var childrenByParent = statement.Edges
             .GroupBy(edge => edge.FromNodeId, StringComparer.Ordinal)
             .ToDictionary(
                 group => group.Key,
-                group => group.Select(edge => edge.ToNodeId)
-                    .Where(nodesById.ContainsKey)
-                    .Distinct(StringComparer.Ordinal)
-                    .OrderBy(nodeId => nodeId, NodeIdLayoutComparer.Instance)
-                    .ToArray(),
+                group => OrderChildNodeIds(
+                    group.Select(edge => edge.ToNodeId)
+                        .Where(nodesById.ContainsKey)
+                        .Distinct(StringComparer.Ordinal),
+                    nodesById,
+                    orderByNodeId: isHorizontal),
                 StringComparer.Ordinal);
 
         var rootNodeIds = PlanTreeNavigator.ResolveRootNodeIds(statement, nodesById);
 
-        var isHorizontal = direction == GraphLayoutDirection.HorizontalSsms;
         var positions = BuildPositions(
             statement,
             childrenByParent,
@@ -147,6 +148,19 @@ public sealed class PlanGraphLayoutService : IPlanGraphLayoutService
             AverageRowSize = node.AverageRowSize,
             HasImplicitConversion = implicitConversionNodeIds.Contains(node.NodeId)
         };
+
+    private static string[] OrderChildNodeIds(
+        IEnumerable<string> childNodeIds,
+        IReadOnlyDictionary<string, PlanNode> nodesById,
+        bool orderByNodeId) =>
+        orderByNodeId
+            ? childNodeIds
+                .OrderBy(nodeId => nodeId, NodeIdLayoutComparer.Instance)
+                .ToArray()
+            : childNodeIds
+                .OrderByDescending(nodeId => nodesById[nodeId].EstimatedSubtreeCost ?? 0)
+                .ThenBy(nodeId => nodeId, NodeIdLayoutComparer.Instance)
+                .ToArray();
 
     private static Dictionary<string, (double X, double Y)> BuildPositions(
         StatementPlan statement,
