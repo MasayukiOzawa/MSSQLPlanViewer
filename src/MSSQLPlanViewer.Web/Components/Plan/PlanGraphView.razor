@@ -40,8 +40,11 @@ else
                 <marker id="@MarkerId" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
                     <path d="M 0 0 L 8 4 L 0 8 z" fill="#94a3b8" />
                 </marker>
-                <marker id="@CriticalMarkerId" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
-                    <path d="M 0 0 L 8 4 L 0 8 z" fill="#7c3aed" />
+                <marker id="@EstimatedMarkerId" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+                    <path d="M 0 0 L 8 4 L 0 8 z" fill="#94a3b8" />
+                </marker>
+                <marker id="@ActualMarkerId" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+                    <path d="M 0 0 L 8 4 L 0 8 z" fill="#0f766e" />
                 </marker>
             </defs>
 
@@ -52,13 +55,22 @@ else
                       marker-end="@($"url(#{MarkerId})")" />
             }
 
+            @if (ShowCriticalPath)
+            {
+                @foreach (var edge in Layout.Edges.Where(edge => edge.IsOnCriticalPath))
+                {
+                    <path d="@BuildEdgePath(edge, Layout.Direction)"
+                          class="graph-edge critical-path-outline"
+                          style="@BuildCriticalEdgeOutlineStyle(edge)" />
+                }
+            }
+
             @foreach (var edge in Layout.Edges)
             {
-                var isCriticalEdge = ShowCriticalPath && edge.IsOnCriticalPath;
                 <path d="@BuildEdgePath(edge, Layout.Direction)"
-                      class="@(isCriticalEdge ? "graph-edge critical-path" : "graph-edge")"
-                      style="@BuildEdgeStrokeStyle(edge, isCriticalEdge)"
-                      marker-end="@($"url(#{(isCriticalEdge ? CriticalMarkerId : MarkerId)})")" />
+                      class="graph-edge"
+                      style="@BuildEdgeStrokeStyle(edge)"
+                      marker-end="@($"url(#{ResolveEdgeMarkerId(edge)})")" />
             }
 
             @foreach (var edge in Layout.Edges)
@@ -390,7 +402,9 @@ else
 
     private string MarkerId => $"plan-arrow-{Layout?.StatementId ?? "default"}";
 
-    private string CriticalMarkerId => $"plan-arrow-critical-{Layout?.StatementId ?? "default"}";
+    private string EstimatedMarkerId => $"plan-arrow-estimated-{Layout?.StatementId ?? "default"}";
+
+    private string ActualMarkerId => $"plan-arrow-actual-{Layout?.StatementId ?? "default"}";
 
     private double ScaledWidth => Layout is null ? 0 : Layout.Width * (double)zoom;
 
@@ -525,14 +539,33 @@ else
         return $"M {edge.X1} {edge.Y1} C {controlX1} {edge.Y1}, {controlX2} {edge.Y2}, {edge.X2} {edge.Y2}";
     }
 
-    private static string BuildEdgeStrokeStyle(GraphEdgeLayout edge, bool isCriticalEdge)
+    private static string BuildEdgeStrokeStyle(GraphEdgeLayout edge)
     {
-        var strokeWidth = isCriticalEdge
-            ? Math.Max(edge.StrokeWidth, 5d)
-            : edge.StrokeWidth;
-
-        return $"stroke-width: {strokeWidth.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}px";
+        var strokeWidth = edge.StrokeWidth.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        return $"stroke: {ResolveEdgeColor(edge)}; stroke-width: {strokeWidth}px";
     }
+
+    private static string BuildCriticalEdgeOutlineStyle(GraphEdgeLayout edge)
+    {
+        var strokeWidth = Math.Max(edge.StrokeWidth + 4d, 7d)
+            .ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        return $"stroke-width: {strokeWidth}px";
+    }
+
+    private string ResolveEdgeMarkerId(GraphEdgeLayout edge)
+    {
+        if (edge.ActualRows.HasValue)
+        {
+            return ActualMarkerId;
+        }
+
+        return edge.EstimatedRows.HasValue ? EstimatedMarkerId : MarkerId;
+    }
+
+    private static string ResolveEdgeColor(GraphEdgeLayout edge) =>
+        edge.ActualRows.HasValue
+            ? "#0f766e"
+            : "#94a3b8";
 
     private static EdgeFlowLabel? BuildEdgeFlowLabel(GraphEdgeLayout edge, GraphLayoutDirection direction)
     {

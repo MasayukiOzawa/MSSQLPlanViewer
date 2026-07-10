@@ -118,7 +118,7 @@ public sealed class PlanGraphSvgRendererTests
                 && element.Attribute("data-metric-separator")?.Value == "true"));
         Assert.DoesNotContain("CPU Est", svg);
         Assert.DoesNotContain("Elapsed Est", svg);
-        Assert.Contains("url(#arrow-critical)", svg);
+        Assert.Contains("data-edge-kind=\"critical-outline\"", svg);
         Assert.Contains("markerUnits=\"userSpaceOnUse\"", svg);
         Assert.Contains("markerWidth=\"8\"", svg);
         Assert.Contains("M 0 0 L 8 4 L 0 8 z", svg);
@@ -129,7 +129,7 @@ public sealed class PlanGraphSvgRendererTests
         Assert.Contains("fill=\"#f5f3ff\"", svg);
         Assert.Contains("fill=\"#ede9fe\"", svg);
         Assert.Contains("stroke=\"#c4b5fd\"", svg);
-        Assert.Contains("stroke-width=\"5\"", svg);
+        Assert.Contains("stroke-width=\"7\"", svg);
         Assert.Contains("height=\"7\"", svg);
         Assert.DoesNotContain("class=", svg, StringComparison.Ordinal);
     }
@@ -171,6 +171,7 @@ public sealed class PlanGraphSvgRendererTests
         var svg = _renderer.Render(layout, new GraphRenderOptions(90, false));
 
         Assert.DoesNotContain("url(#arrow-critical)", svg, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-edge-kind=\"critical-outline\"", svg, StringComparison.Ordinal);
         Assert.DoesNotContain("stroke-dasharray=\"5 4\"", svg, StringComparison.Ordinal);
         Assert.DoesNotContain("data-cost-emphasis", svg, StringComparison.Ordinal);
         Assert.Contains("stroke=\"#f59e0b\"", svg);
@@ -221,7 +222,7 @@ public sealed class PlanGraphSvgRendererTests
 
         XDocument.Parse(svg);
         Assert.Contains("M 300 80 C 264 80, 136 80, 100 80", svg);
-        Assert.Contains("url(#arrow-critical)", svg);
+        Assert.Contains("data-edge-kind=\"critical-outline\"", svg);
         Assert.Contains("data-parallel-badge-for=\"0\"", svg);
         Assert.Contains("fill=\"#fde68a\"", svg);
         Assert.Contains("stroke=\"#f59e0b\"", svg);
@@ -350,6 +351,45 @@ public sealed class PlanGraphSvgRendererTests
     }
 
     [Fact]
+    public void Render_ColorsEdgesByRowSourceAndLayersCriticalOutline()
+    {
+        var layout = new StatementGraphLayout(
+            StatementId: "stmt-edge-colors",
+            StatementNode: null,
+            Width: 520,
+            Height: 220,
+            Nodes: Array.Empty<GraphNodeLayout>(),
+            StatementEdges: Array.Empty<GraphEdgeLayout>(),
+            Edges: new[]
+            {
+                new GraphEdgeLayout("0", "1", 420, 60, 240, 60, IsOnCriticalPath: true, FlowRows: 0, StrokeWidth: 1.6, EstimatedRows: 1_000, ActualRows: 0),
+                new GraphEdgeLayout("0", "2", 420, 100, 240, 100, IsOnCriticalPath: false, FlowRows: 100, StrokeWidth: 8, EstimatedRows: 100, ActualRows: null),
+                new GraphEdgeLayout("0", "3", 420, 140, 240, 140, IsOnCriticalPath: false, FlowRows: null, StrokeWidth: 2.2, EstimatedRows: null, ActualRows: null)
+            },
+            Direction: GraphLayoutDirection.HorizontalSsms);
+
+        var svg = _renderer.Render(layout, new GraphRenderOptions(90, true));
+        var paths = XDocument.Parse(svg).Descendants()
+            .Where(element => element.Name.LocalName == "path")
+            .ToArray();
+        var flowEdges = paths
+            .Where(element => element.Attribute("data-edge-kind")?.Value == "flow")
+            .ToDictionary(element => element.Attribute("data-row-source")!.Value, StringComparer.Ordinal);
+        var criticalOutline = Assert.Single(paths, element => element.Attribute("data-edge-kind")?.Value == "critical-outline");
+
+        Assert.Equal("#0f766e", flowEdges["actual"].Attribute("stroke")?.Value);
+        Assert.Equal("url(#arrow-actual)", flowEdges["actual"].Attribute("marker-end")?.Value);
+        Assert.Equal("#94a3b8", flowEdges["estimated"].Attribute("stroke")?.Value);
+        Assert.Equal("url(#arrow-estimated)", flowEdges["estimated"].Attribute("marker-end")?.Value);
+        Assert.Equal("#94a3b8", flowEdges["none"].Attribute("stroke")?.Value);
+        Assert.Equal("url(#arrow)", flowEdges["none"].Attribute("marker-end")?.Value);
+        Assert.Equal("#7c3aed", criticalOutline.Attribute("stroke")?.Value);
+        Assert.Equal("7", criticalOutline.Attribute("stroke-width")?.Value);
+        Assert.Null(criticalOutline.Attribute("marker-end"));
+        Assert.True(Array.IndexOf(paths, criticalOutline) < Array.IndexOf(paths, flowEdges["actual"]));
+    }
+
+    [Fact]
     public void Render_SplitsTableAndIndexLabelsIntoSeparateTextRows()
     {
         var layout = new StatementGraphLayout(
@@ -449,6 +489,6 @@ public sealed class PlanGraphSvgRendererTests
         Assert.Contains("stroke=\"#ea580c\"", svg);
         Assert.Contains("stroke=\"#f59e0b\"", svg);
         Assert.Contains("stroke=\"#7c3aed\"", svg);
-        Assert.Contains("url(#arrow-critical)", svg);
+        Assert.Contains("data-edge-kind=\"critical-outline\"", svg);
     }
 }

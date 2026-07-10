@@ -629,7 +629,11 @@ h1 {
 
 .statement-text pre {
     margin: 0;
+    max-height: 32em;
+    overflow-y: auto;
+    overflow-x: hidden;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
     font-family: Consolas, "Courier New", monospace;
     font-size: 0.94rem;
     line-height: 1.6;

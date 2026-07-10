@@ -11,8 +11,11 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
     private const string MetricFontSize = "11";
     private const string EdgeFlowFontSize = "12";
     private const string MetricFill = "#64748b";
+    private const string ActualEdgeColor = "#0f766e";
+    private const string EstimatedEdgeColor = "#94a3b8";
+    private const string DefaultEdgeColor = "#94a3b8";
     private const string CriticalColor = "#7c3aed";
-    private const double CriticalEdgeStrokeWidth = 5d;
+    private const double MinCriticalOutlineStrokeWidth = 7d;
     private const double MetricSeparatorBottomMargin = 15d;
 
     public string Render(StatementGraphLayout layout, GraphRenderOptions? options = null)
@@ -51,12 +54,20 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
 
         foreach (var edge in layout.StatementEdges)
         {
-            root.Add(BuildEdge(ns, edge, options, layout.Direction, isDashed: true));
+            root.Add(BuildEdge(ns, edge, layout.Direction, isDashed: true));
+        }
+
+        if (options.ShowCriticalPath)
+        {
+            foreach (var edge in layout.Edges.Where(edge => edge.IsOnCriticalPath))
+            {
+                root.Add(BuildCriticalEdgeOutline(ns, edge, layout.Direction));
+            }
         }
 
         foreach (var edge in layout.Edges)
         {
-            root.Add(BuildEdge(ns, edge, options, layout.Direction));
+            root.Add(BuildEdge(ns, edge, layout.Direction));
         }
 
         foreach (var edge in layout.Edges)
@@ -84,8 +95,9 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
     private static XElement BuildDefinitions(XNamespace ns) =>
         new(
             ns + "defs",
-            BuildMarker(ns, "arrow", "#94a3b8"),
-            BuildMarker(ns, "arrow-critical", CriticalColor));
+            BuildMarker(ns, "arrow", DefaultEdgeColor),
+            BuildMarker(ns, "arrow-estimated", EstimatedEdgeColor),
+            BuildMarker(ns, "arrow-actual", ActualEdgeColor));
 
     private static XElement BuildMarker(XNamespace ns, string id, string fill) =>
         new(
@@ -105,19 +117,19 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
     private static XElement BuildEdge(
         XNamespace ns,
         GraphEdgeLayout edge,
-        GraphRenderOptions options,
         GraphLayoutDirection direction,
         bool isDashed = false)
     {
-        var isCritical = options.ShowCriticalPath && edge.IsOnCriticalPath;
-        var strokeWidth = ResolveEdgeStrokeWidth(edge, isCritical);
+        var rowSource = ResolveEdgeRowSource(edge);
         var element = new XElement(
             ns + "path",
             new XAttribute("d", PlanGraphSvgPathBuilder.BuildEdgePath(edge, direction)),
             new XAttribute("fill", "none"),
-            new XAttribute("stroke", isCritical ? CriticalColor : "#94a3b8"),
-            new XAttribute("stroke-width", Format(strokeWidth)),
-            new XAttribute("marker-end", isCritical ? "url(#arrow-critical)" : "url(#arrow)"));
+            new XAttribute("stroke", ResolveEdgeColor(rowSource)),
+            new XAttribute("stroke-width", Format(edge.StrokeWidth)),
+            new XAttribute("marker-end", $"url(#{ResolveEdgeMarkerId(rowSource)})"),
+            new XAttribute("data-edge-kind", isDashed ? "statement" : "flow"),
+            new XAttribute("data-row-source", rowSource));
 
         if (isDashed)
         {
@@ -127,10 +139,38 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
         return element;
     }
 
-    private static double ResolveEdgeStrokeWidth(GraphEdgeLayout edge, bool isCritical) =>
-        isCritical
-            ? Math.Max(edge.StrokeWidth, CriticalEdgeStrokeWidth)
-            : edge.StrokeWidth;
+    private static XElement BuildCriticalEdgeOutline(
+        XNamespace ns,
+        GraphEdgeLayout edge,
+        GraphLayoutDirection direction) =>
+        new(
+            ns + "path",
+            new XAttribute("d", PlanGraphSvgPathBuilder.BuildEdgePath(edge, direction)),
+            new XAttribute("fill", "none"),
+            new XAttribute("stroke", CriticalColor),
+            new XAttribute("stroke-width", Format(Math.Max(edge.StrokeWidth + 4d, MinCriticalOutlineStrokeWidth))),
+            new XAttribute("data-edge-kind", "critical-outline"));
+
+    private static string ResolveEdgeRowSource(GraphEdgeLayout edge) =>
+        edge.ActualRows.HasValue
+            ? "actual"
+            : edge.EstimatedRows.HasValue ? "estimated" : "none";
+
+    private static string ResolveEdgeColor(string rowSource) =>
+        rowSource switch
+        {
+            "actual" => ActualEdgeColor,
+            "estimated" => EstimatedEdgeColor,
+            _ => DefaultEdgeColor
+        };
+
+    private static string ResolveEdgeMarkerId(string rowSource) =>
+        rowSource switch
+        {
+            "actual" => "arrow-actual",
+            "estimated" => "arrow-estimated",
+            _ => "arrow"
+        };
 
     private static XElement? BuildEdgeFlowLabel(XNamespace ns, GraphEdgeLayout edge, GraphLayoutDirection direction)
     {

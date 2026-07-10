@@ -376,21 +376,21 @@
                         </button>
                         <button type="button"
                                 role="tab"
-                                class="@GetAccessSummaryTabClass(AccessSummaryTab.MissingIndexes, activeAccessSummaryTab)"
-                                aria-selected="@(activeAccessSummaryTab == AccessSummaryTab.MissingIndexes)"
-                                disabled="@(missingIndexItems.Count == 0)"
-                                @onclick="@(() => SetAccessSummaryTab(AccessSummaryTab.MissingIndexes))">
-                            Missing indexes
-                            <span>@missingIndexItems.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
-                        </button>
-                        <button type="button"
-                                role="tab"
                                 class="@GetAccessSummaryTabClass(AccessSummaryTab.ParameterList, activeAccessSummaryTab)"
                                 aria-selected="@(activeAccessSummaryTab == AccessSummaryTab.ParameterList)"
                                 disabled="@(parameterListItems.Count == 0)"
                                 @onclick="@(() => SetAccessSummaryTab(AccessSummaryTab.ParameterList))">
                             ParameterList
                             <span>@parameterListItems.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                        </button>
+                        <button type="button"
+                                role="tab"
+                                class="@GetAccessSummaryTabClass(AccessSummaryTab.MissingIndexes, activeAccessSummaryTab)"
+                                aria-selected="@(activeAccessSummaryTab == AccessSummaryTab.MissingIndexes)"
+                                disabled="@(missingIndexItems.Count == 0)"
+                                @onclick="@(() => SetAccessSummaryTab(AccessSummaryTab.MissingIndexes))">
+                            Missing indexes
+                            <span>@missingIndexItems.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
                         </button>
                         <button type="button"
                                 role="tab"

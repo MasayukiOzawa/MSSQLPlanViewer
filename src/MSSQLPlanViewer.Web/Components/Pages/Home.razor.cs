@@ -192,8 +192,8 @@ public partial class Home
     {
         AccessedObjects,
         AccessedIndexes,
-        MissingIndexes,
         ParameterList,
+        MissingIndexes,
         SeekScanPredicates,
         ImplicitConversions
     }
@@ -406,14 +406,14 @@ public partial class Home
             return AccessSummaryTab.AccessedIndexes;
         }
 
-        if (missingIndexCount > 0)
-        {
-            return AccessSummaryTab.MissingIndexes;
-        }
-
         if (parameterListCount > 0)
         {
             return AccessSummaryTab.ParameterList;
+        }
+
+        if (missingIndexCount > 0)
+        {
+            return AccessSummaryTab.MissingIndexes;
         }
 
         if (seekScanPredicateCount > 0)

@@ -77,9 +77,9 @@
     stroke-width: 2.2px;
 }
 
-.graph-edge.critical-path {
+.graph-edge.critical-path-outline {
     stroke: #7c3aed;
-    stroke-width: 5px;
+    pointer-events: none;
 }
 
 .graph-edge.statement-edge {

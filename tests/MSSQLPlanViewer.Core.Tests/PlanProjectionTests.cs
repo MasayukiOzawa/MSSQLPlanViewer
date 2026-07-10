@@ -161,7 +161,7 @@ public sealed class PlanProjectionTests
     }
 
     [Fact]
-    public void GraphLayout_ScalesOperatorEdgeWidthByFlowRows()
+    public void GraphLayout_PrefersActualRowsWhenScalingOperatorEdges()
     {
         var summary = new StatementPlanSummary(10m, 1, null, null, null, null, null, null, Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<PlanProperty>(), Array.Empty<OptimizerStatsUsageEntry>(), Array.Empty<MissingIndexEntry>(), Array.Empty<WaitStatEntry>(), Array.Empty<AccessedObjectEntry>(), Array.Empty<AccessedIndexEntry>(), Array.Empty<SeekScanPredicateEntry>(), Array.Empty<ParameterListEntry>());
         var statement = new StatementPlan(
@@ -172,8 +172,8 @@ public sealed class PlanProjectionTests
             Nodes: new[]
             {
                 CreateNode("0", 10m, estimatedRows: 10, actualRows: 10),
-                CreateNode("1", 8m, estimatedRows: 1_000, actualRows: 1_000),
-                CreateNode("2", 2m, estimatedRows: 10, actualRows: 10)
+                CreateNode("1", 8m, estimatedRows: 10_000, actualRows: 10),
+                CreateNode("2", 2m, estimatedRows: 10, actualRows: 1_000)
             },
             Edges: new[] { new PlanEdge("0", "1"), new PlanEdge("0", "2") },
             Warnings: Array.Empty<PlanWarning>(),
@@ -181,18 +181,80 @@ public sealed class PlanProjectionTests
 
         var layout = graphLayoutService.CreateLayout(statement, direction: GraphLayoutDirection.HorizontalSsms);
 
-        var highFlowEdge = Assert.Single(layout.Edges, edge => edge.ToNodeId == "1");
-        var lowFlowEdge = Assert.Single(layout.Edges, edge => edge.ToNodeId == "2");
-        Assert.Equal(1_000d, highFlowEdge.FlowRows.GetValueOrDefault());
-        Assert.Equal(1_000d, highFlowEdge.EstimatedRows.GetValueOrDefault());
-        Assert.Equal(1_000d, highFlowEdge.ActualRows.GetValueOrDefault());
-        Assert.Equal(10d, lowFlowEdge.FlowRows.GetValueOrDefault());
-        Assert.Equal(10d, lowFlowEdge.EstimatedRows.GetValueOrDefault());
-        Assert.Equal(10d, lowFlowEdge.ActualRows.GetValueOrDefault());
-        Assert.True(highFlowEdge.StrokeWidth > lowFlowEdge.StrokeWidth);
-        Assert.InRange(lowFlowEdge.StrokeWidth, 1.6d, 12d);
-        Assert.InRange(highFlowEdge.StrokeWidth, 1.6d, 12d);
-        Assert.True(highFlowEdge.StrokeWidth > 10d);
+        var lowActualEdge = Assert.Single(layout.Edges, edge => edge.ToNodeId == "1");
+        var highActualEdge = Assert.Single(layout.Edges, edge => edge.ToNodeId == "2");
+        Assert.Equal(10d, lowActualEdge.FlowRows);
+        Assert.Equal(10_000d, lowActualEdge.EstimatedRows);
+        Assert.Equal(10d, lowActualEdge.ActualRows);
+        Assert.Equal(1_000d, highActualEdge.FlowRows);
+        Assert.Equal(10d, highActualEdge.EstimatedRows);
+        Assert.Equal(1_000d, highActualEdge.ActualRows);
+        Assert.True(highActualEdge.StrokeWidth > lowActualEdge.StrokeWidth);
+        Assert.InRange(lowActualEdge.StrokeWidth, 1.6d, 12d);
+        Assert.InRange(highActualEdge.StrokeWidth, 1.6d, 12d);
+        Assert.True(highActualEdge.StrokeWidth > 10d);
+    }
+
+    [Fact]
+    public void GraphLayout_FallsBackToEstimatedRowsWhenActualRowsAreUnavailable()
+    {
+        var statement = TestPlanFactory.Statement(
+            nodes: new[]
+            {
+                CreateNode("0", 10m),
+                CreateNode("1", 8m, estimatedRows: 1_000, actualRows: null),
+                CreateNode("2", 2m, estimatedRows: 10, actualRows: 100)
+            },
+            edges: new[] { new PlanEdge("0", "1"), new PlanEdge("0", "2") },
+            rootNodeIds: new[] { "0" });
+
+        var layout = graphLayoutService.CreateLayout(statement);
+
+        var estimatedEdge = Assert.Single(layout.Edges, edge => edge.ToNodeId == "1");
+        var actualEdge = Assert.Single(layout.Edges, edge => edge.ToNodeId == "2");
+        Assert.Null(estimatedEdge.ActualRows);
+        Assert.Equal(1_000d, estimatedEdge.FlowRows);
+        Assert.Equal(100d, actualEdge.FlowRows);
+        Assert.True(estimatedEdge.StrokeWidth > actualEdge.StrokeWidth);
+    }
+
+    [Fact]
+    public void GraphLayout_TreatsZeroActualRowsAsAnActualValue()
+    {
+        var statement = TestPlanFactory.Statement(
+            nodes: new[]
+            {
+                CreateNode("0", 10m),
+                CreateNode("1", 8m, estimatedRows: 10_000, actualRows: 0),
+                CreateNode("2", 2m, estimatedRows: 10, actualRows: 100)
+            },
+            edges: new[] { new PlanEdge("0", "1"), new PlanEdge("0", "2") },
+            rootNodeIds: new[] { "0" });
+
+        var layout = graphLayoutService.CreateLayout(statement);
+        var zeroActualEdge = Assert.Single(layout.Edges, edge => edge.ToNodeId == "1");
+
+        Assert.Equal(0d, zeroActualEdge.FlowRows);
+        Assert.Equal(1.6d, zeroActualEdge.StrokeWidth);
+    }
+
+    [Fact]
+    public void GraphLayout_UsesDefaultWidthWhenRowsAreUnavailable()
+    {
+        var statement = TestPlanFactory.Statement(
+            nodes: new[]
+            {
+                CreateNode("0", 10m),
+                CreateNode("1", 8m, estimatedRows: null, actualRows: null)
+            },
+            edges: new[] { new PlanEdge("0", "1") },
+            rootNodeIds: new[] { "0" });
+
+        var layout = graphLayoutService.CreateLayout(statement);
+        var edge = Assert.Single(layout.Edges);
+
+        Assert.Null(edge.FlowRows);
+        Assert.Equal(2.2d, edge.StrokeWidth);
     }
 
     [Fact]
@@ -1114,7 +1176,7 @@ public sealed class PlanProjectionTests
         Assert.Equal("[A].Id", segmentNode.Properties.Single(property => property.Name == "Group by").Value);
     }
 
-    private static PlanNode CreateNode(string nodeId, decimal cost, double estimatedRows = 1, double? actualRows = null) =>
+    private static PlanNode CreateNode(string nodeId, decimal cost, double? estimatedRows = 1, double? actualRows = null) =>
         new(
             NodeId: nodeId,
             PhysicalOp: "Nested Loops",
