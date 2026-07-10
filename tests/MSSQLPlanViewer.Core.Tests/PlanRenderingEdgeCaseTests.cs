@@ -155,6 +155,27 @@ public sealed class PlanRenderingEdgeCaseTests
     }
 
     [Fact]
+    public void CreateLayout_HorizontalSsms_PositionsSiblingNodesByAscendingNumericNodeId()
+    {
+        var statement = Statement(
+            nodes: new[]
+            {
+                Node("6", subtreeCost: 100m),
+                Node("8", subtreeCost: 85m),
+                Node("7", subtreeCost: 13m),
+                Node("10", subtreeCost: 1m),
+            },
+            edges: new[] { Edge("6", "8"), Edge("6", "7"), Edge("6", "10") },
+            rootNodeIds: new[] { "6" });
+
+        var layout = _layoutService.CreateLayout(statement, direction: GraphLayoutDirection.HorizontalSsms);
+        var nodesById = layout.Nodes.ToDictionary(node => node.NodeId, StringComparer.Ordinal);
+
+        Assert.True(nodesById["7"].Y < nodesById["8"].Y);
+        Assert.True(nodesById["8"].Y < nodesById["10"].Y);
+    }
+
+    [Fact]
     public void CreateLayout_DropsEdgesReferencingUnknownNodes()
     {
         var statement = Statement(
@@ -180,6 +201,56 @@ public sealed class PlanRenderingEdgeCaseTests
         var layout = _layoutService.CreateLayout(statement);
 
         Assert.All(layout.Nodes, node => Assert.Equal(0m, node.CostRatio));
+    }
+
+    [Fact]
+    public void CreateLayout_UsesNodeZeroSubtreeCostForDisplayedNodeCostRatio()
+    {
+        var statement = Statement(
+            nodes: new[]
+            {
+                Node("0", subtreeCost: 10m),
+                Node("11", subtreeCost: 3m, estimatedCpuCost: 300m, estimatedIoCost: 0m),
+                Node("19", subtreeCost: 7m, estimatedCpuCost: 0m, estimatedIoCost: 0m),
+                Node("28", subtreeCost: 7m, estimatedCpuCost: 700m, estimatedIoCost: 0m)
+            },
+            edges: new[] { Edge("0", "11"), Edge("0", "19"), Edge("19", "28") },
+            rootNodeIds: new[] { "0" },
+            summary: EmptySummary with { EstimatedSubtreeCost = 100m });
+
+        var layout = _layoutService.CreateLayout(statement);
+        var nodesById = layout.Nodes.ToDictionary(node => node.NodeId, StringComparer.Ordinal);
+
+        Assert.Equal(1m, nodesById["0"].CostRatio);
+        Assert.Equal(0.3m, nodesById["11"].CostRatio);
+        Assert.Equal(0.7m, nodesById["19"].CostRatio);
+        Assert.Equal(0.7m, nodesById["28"].CostRatio);
+    }
+
+    [Fact]
+    public void Project_UsesNodeZeroSubtreeCostForDisplayedNodeCostRatio()
+    {
+        var statement = Statement(
+            nodes: new[]
+            {
+                Node("0", subtreeCost: 10m),
+                Node("11", subtreeCost: 3m, estimatedCpuCost: 300m, estimatedIoCost: 0m),
+                Node("19", subtreeCost: 7m, estimatedCpuCost: 0m, estimatedIoCost: 0m),
+                Node("28", subtreeCost: 7m, estimatedCpuCost: 700m, estimatedIoCost: 0m)
+            },
+            edges: new[] { Edge("0", "11"), Edge("0", "19"), Edge("19", "28") },
+            rootNodeIds: new[] { "0" },
+            summary: EmptySummary with { EstimatedSubtreeCost = 100m });
+
+        var rowsById = _projector.Project(statement)
+            .ToDictionary(row => row.NodeId, StringComparer.Ordinal);
+
+        Assert.Equal(1m, rowsById["0"].CostRatio);
+        Assert.Equal(0.3m, rowsById["11"].CostRatio);
+        Assert.Equal(0.7m, rowsById["19"].CostRatio);
+        Assert.Equal(0.7m, rowsById["28"].CostRatio);
+        Assert.Contains("Cost 70%", rowsById["19"].Summary);
+        Assert.Contains("Cost 70%", rowsById["28"].Summary);
     }
 
     [Fact]

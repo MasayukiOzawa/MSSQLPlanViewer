@@ -10,5 +10,7 @@ public sealed record PlanRuntimeMetrics(
     double? ActualRebinds,
     double? ActualRewinds)
 {
+    public string? ActualExecutionMode { get; init; }
+
     public IReadOnlyList<PlanThreadRuntimeMetrics> Threads { get; init; } = Array.Empty<PlanThreadRuntimeMetrics>();
 }

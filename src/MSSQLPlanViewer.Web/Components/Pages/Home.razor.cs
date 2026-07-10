@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
@@ -37,11 +38,17 @@ public partial class Home
 
     private GraphLayoutDirection CurrentGraphLayoutDirection { get; set; } = GraphLayoutDirection.HorizontalSsms;
 
+    private AccessSummaryTab SelectedAccessSummaryTab { get; set; } = AccessSummaryTab.AccessedObjects;
+
+    private OptimizationSummaryTab SelectedOptimizationSummaryTab { get; set; } = OptimizationSummaryTab.OptimizerStatsUsage;
+
     private string? ParseError { get; set; }
 
     private string? EstimatedPlanError { get; set; }
 
-    private int TableFocusRequestVersion { get; set; }
+    private int TableScrollRequestVersion { get; set; }
+
+    private int TableExpandRequestVersion { get; set; }
 
     private int PastedPlanCounter { get; set; }
 
@@ -61,6 +68,16 @@ public partial class Home
 
     private string? TableActionMessage { get; set; }
 
+    private bool IsPlanDetailsStatementTextExpanded { get; set; }
+
+    private ElementReference graphPanelRef;
+
+    private ElementReference graphPanelResizeHandleRef;
+
+    private ElementReference tablePanelRef;
+
+    private ElementReference tablePanelResizeHandleRef;
+
     private ElementReference detailsPaneRef;
 
     private ElementReference detailsResizeHandleRef;
@@ -79,6 +96,18 @@ public partial class Home
             if (ActivePlan is not null)
             {
                 ActivePlan.SelectedStatementId = value;
+            }
+        }
+    }
+
+    private string? SelectedStatementKey
+    {
+        get => ActivePlan?.SelectedStatementKey;
+        set
+        {
+            if (ActivePlan is not null)
+            {
+                ActivePlan.SelectedStatementKey = value;
             }
         }
     }
@@ -141,7 +170,8 @@ public partial class Home
             GraphCostEmphasis.Resolve(node.CostRatio, GraphCostThresholdPercent))) ?? 0;
 
     private StatementPlan? SelectedStatement =>
-        Document?.Statements.FirstOrDefault(statement => statement.StatementId == SelectedStatementId)
+        Document?.Statements.FirstOrDefault(statement => statement.StatementKey == SelectedStatementKey)
+        ?? Document?.Statements.FirstOrDefault(statement => statement.StatementId == SelectedStatementId)
         ?? Document?.Statements.FirstOrDefault();
 
     private PlanNode? SelectedNode =>
@@ -158,11 +188,41 @@ public partial class Home
         Query
     }
 
+    private enum AccessSummaryTab
+    {
+        AccessedObjects,
+        AccessedIndexes,
+        MissingIndexes,
+        ParameterList,
+        SeekScanPredicates,
+        ImplicitConversions
+    }
+
+    private enum OptimizationSummaryTab
+    {
+        OptimizerStatsUsage,
+        WaitStats,
+        WarningDetails
+    }
+
     private sealed record InputMessage(string Text, bool IsError);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await JS.InvokeVoidAsync("mssqlPlanViewerGraphPan.initDetailsResizer", detailsPaneRef, detailsResizeHandleRef);
+        if (SelectedStatement is not null)
+        {
+            await JS.InvokeVoidAsync(
+                "mssqlPlanViewerGraphPan.initPanelResizer",
+                graphPanelRef,
+                graphPanelResizeHandleRef,
+                BuildGraphPanelResizeOptions());
+            await JS.InvokeVoidAsync(
+                "mssqlPlanViewerGraphPan.initPanelResizer",
+                tablePanelRef,
+                tablePanelResizeHandleRef,
+                BuildTablePanelResizeOptions());
+            await JS.InvokeVoidAsync("mssqlPlanViewerGraphPan.initDetailsResizer", detailsPaneRef, detailsResizeHandleRef);
+        }
 
         if (firstRender)
         {
@@ -188,6 +248,30 @@ public partial class Home
             .Where(item => !string.IsNullOrWhiteSpace(item.Value))
             .ToArray();
     }
+
+    private static object BuildGraphPanelResizeOptions() => new
+    {
+        minHeightPx = 420,
+        minWidthPx = 420,
+        maxWidthMode = "viewport",
+        resizeTrackSelector = ".viewer-grid",
+        resizeTrackProperty = "--graph-panel-min-width",
+        contentResizeSelector = ".graph-resize-frame",
+        minContentHeightPx = 288,
+        rightMarginPx = 32
+    };
+
+    private static object BuildTablePanelResizeOptions() => new
+    {
+        minHeightPx = 360,
+        minWidthPx = 420,
+        maxWidthMode = "viewport",
+        resizeTrackSelector = ".viewer-grid",
+        resizeTrackProperty = "--table-panel-min-width",
+        contentResizeSelector = ".table-shell",
+        minContentHeightPx = 256,
+        rightMarginPx = 32
+    };
 
     private static IReadOnlyList<PlanProperty> GetVisibleProperties(IReadOnlyList<PlanProperty> properties) =>
         properties
@@ -220,21 +304,40 @@ public partial class Home
     }
 
     private static IReadOnlyList<SummaryTableRow> BuildCombinedPlanDetailRows(
+        string statementElementName,
+        IReadOnlyList<PlanProperty> statementItems,
+        IReadOnlyList<PlanProperty> statementSetOptionsItems,
         IReadOnlyList<PlanProperty> queryTimeStatsItems,
         IReadOnlyList<PlanProperty> statementSummaryItems,
         IReadOnlyList<PlanProperty> queryPlanItems,
+        IReadOnlyList<IReadOnlyList<PlanProperty>> threadStatItems,
         IReadOnlyList<PlanProperty> memoryGrantInfoItems,
         IReadOnlyList<PlanProperty> optimizerHardwareItems)
     {
         var rows = new List<SummaryTableRow>();
 
-        AddSummaryRows(rows, "Query Time Stats", queryTimeStatsItems);
+        AddSummaryRows(rows, string.IsNullOrWhiteSpace(statementElementName) ? "Statement" : statementElementName, statementItems);
+        AddSummaryRows(rows, "StatementSetOptions", statementSetOptionsItems);
         AddSummaryRows(rows, "Statement Plan Summary", statementSummaryItems);
-        AddSummaryRows(rows, "Query Plan", queryPlanItems);
+        AddSummaryRows(rows, "QueryPlan", queryPlanItems);
+        AddSummaryRows(rows, "QueryTimeStats", queryTimeStatsItems);
+        AddThreadStatRows(rows, threadStatItems);
         AddSummaryRows(rows, "MemoryGrantInfo", memoryGrantInfoItems);
         AddSummaryRows(rows, "OptimizerHardwareDependentProperties", optimizerHardwareItems);
 
         return rows;
+    }
+
+    private static void AddThreadStatRows(ICollection<SummaryTableRow> rows, IReadOnlyList<IReadOnlyList<PlanProperty>> threadStatItems)
+    {
+        for (var index = 0; index < threadStatItems.Count; index++)
+        {
+            var section = threadStatItems.Count == 1
+                ? "ThreadStat"
+                : $"ThreadStat #{(index + 1).ToString(CultureInfo.InvariantCulture)}";
+
+            AddSummaryRows(rows, section, threadStatItems[index]);
+        }
     }
 
     private static void AddSummaryRows(ICollection<SummaryTableRow> rows, string section, IReadOnlyList<PlanProperty> properties)
@@ -263,6 +366,141 @@ public partial class Home
     private static string BuildSeekScanPredicateTableName(SeekScanPredicateEntry item) =>
         PlanDisplayFormatter.FormatQualifiedTableName(item.Database, item.Schema, item.Table);
 
+    private static string BuildImplicitConversionObjectName(ImplicitConversionEntry item) =>
+        PlanDisplayFormatter.FormatObjectName(new PlanObjectReference(
+            Database: item.Database,
+            Schema: item.Schema,
+            Table: item.Table,
+            Index: item.Index,
+            Alias: null,
+            IndexKind: item.IndexKind,
+            Storage: null));
+
+    private AccessSummaryTab ResolveAccessSummaryTab(
+        int accessedObjectCount,
+        int accessedIndexCount,
+        int missingIndexCount,
+        int parameterListCount,
+        int seekScanPredicateCount,
+        int implicitConversionCount)
+    {
+        if (HasAccessSummaryTabItems(
+            SelectedAccessSummaryTab,
+            accessedObjectCount,
+            accessedIndexCount,
+            missingIndexCount,
+            parameterListCount,
+            seekScanPredicateCount,
+            implicitConversionCount))
+        {
+            return SelectedAccessSummaryTab;
+        }
+
+        if (accessedObjectCount > 0)
+        {
+            return AccessSummaryTab.AccessedObjects;
+        }
+
+        if (accessedIndexCount > 0)
+        {
+            return AccessSummaryTab.AccessedIndexes;
+        }
+
+        if (missingIndexCount > 0)
+        {
+            return AccessSummaryTab.MissingIndexes;
+        }
+
+        if (parameterListCount > 0)
+        {
+            return AccessSummaryTab.ParameterList;
+        }
+
+        if (seekScanPredicateCount > 0)
+        {
+            return AccessSummaryTab.SeekScanPredicates;
+        }
+
+        if (implicitConversionCount > 0)
+        {
+            return AccessSummaryTab.ImplicitConversions;
+        }
+
+        return AccessSummaryTab.AccessedObjects;
+    }
+
+    private static bool HasAccessSummaryTabItems(
+        AccessSummaryTab tab,
+        int accessedObjectCount,
+        int accessedIndexCount,
+        int missingIndexCount,
+        int parameterListCount,
+        int seekScanPredicateCount,
+        int implicitConversionCount) =>
+        tab switch
+        {
+            AccessSummaryTab.AccessedObjects => accessedObjectCount > 0,
+            AccessSummaryTab.AccessedIndexes => accessedIndexCount > 0,
+            AccessSummaryTab.MissingIndexes => missingIndexCount > 0,
+            AccessSummaryTab.ParameterList => parameterListCount > 0,
+            AccessSummaryTab.SeekScanPredicates => seekScanPredicateCount > 0,
+            AccessSummaryTab.ImplicitConversions => implicitConversionCount > 0,
+            _ => false
+        };
+
+    private void SetAccessSummaryTab(AccessSummaryTab tab) =>
+        SelectedAccessSummaryTab = tab;
+
+    private static string GetAccessSummaryTabClass(AccessSummaryTab tab, AccessSummaryTab activeTab) =>
+        tab == activeTab ? "access-tab-button is-active" : "access-tab-button";
+
+    private OptimizationSummaryTab ResolveOptimizationSummaryTab(
+        int optimizerStatsUsageCount,
+        int waitStatsCount,
+        int warningDetailsCount)
+    {
+        if (HasOptimizationSummaryTabItems(SelectedOptimizationSummaryTab, optimizerStatsUsageCount, waitStatsCount, warningDetailsCount))
+        {
+            return SelectedOptimizationSummaryTab;
+        }
+
+        if (optimizerStatsUsageCount > 0)
+        {
+            return OptimizationSummaryTab.OptimizerStatsUsage;
+        }
+
+        if (waitStatsCount > 0)
+        {
+            return OptimizationSummaryTab.WaitStats;
+        }
+
+        if (warningDetailsCount > 0)
+        {
+            return OptimizationSummaryTab.WarningDetails;
+        }
+
+        return OptimizationSummaryTab.OptimizerStatsUsage;
+    }
+
+    private static bool HasOptimizationSummaryTabItems(
+        OptimizationSummaryTab tab,
+        int optimizerStatsUsageCount,
+        int waitStatsCount,
+        int warningDetailsCount) =>
+        tab switch
+        {
+            OptimizationSummaryTab.OptimizerStatsUsage => optimizerStatsUsageCount > 0,
+            OptimizationSummaryTab.WaitStats => waitStatsCount > 0,
+            OptimizationSummaryTab.WarningDetails => warningDetailsCount > 0,
+            _ => false
+        };
+
+    private void SetOptimizationSummaryTab(OptimizationSummaryTab tab) =>
+        SelectedOptimizationSummaryTab = tab;
+
+    private static string GetOptimizationSummaryTabClass(OptimizationSummaryTab tab, OptimizationSummaryTab activeTab) =>
+        tab == activeTab ? "access-tab-button is-active" : "access-tab-button";
+
     private static string BuildWarningDisplayText(PlanWarning warning)
     {
         var value = !string.IsNullOrWhiteSpace(warning.Details)
@@ -288,9 +526,18 @@ public partial class Home
         string.IsNullOrWhiteSpace(warning.Name) ? "Warning" : warning.Name;
 
     private static int GetNodeSortKey(PlanNode node) =>
-        int.TryParse(node.NodeId, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var nodeId)
+        int.TryParse(node.NodeId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var nodeId)
             ? nodeId
             : int.MaxValue;
+
+    private static string BuildStatementSelectionLabel(StatementPlan statement) =>
+        $"Batch #{statement.BatchNumber.ToString(CultureInfo.InvariantCulture)} / #{statement.StatementId} - {statement.StatementType}";
+
+    private static int GetBatchCount(ShowplanDocument document) =>
+        document.Statements
+            .Select(statement => statement.BatchNumber)
+            .Distinct()
+            .Count();
 
     private static string FormatSummaryValue(string? value)
     {
@@ -299,17 +546,52 @@ public partial class Home
             return string.Empty;
         }
 
-        if (long.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var integerValue))
+        if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integerValue))
         {
-            return integerValue.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+            return integerValue.ToString("N0", CultureInfo.InvariantCulture);
         }
 
-        if (decimal.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var decimalValue))
+        if (decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var decimalValue))
         {
-            return decimalValue.ToString("#,0.###############", System.Globalization.CultureInfo.InvariantCulture);
+            return decimalValue.ToString("#,0.###############", CultureInfo.InvariantCulture);
         }
 
         return value;
+    }
+
+    private void TogglePlanDetailsStatementText() =>
+        IsPlanDetailsStatementTextExpanded = !IsPlanDetailsStatementTextExpanded;
+
+    private string GetPlanDetailsStatementTextValue(string value) =>
+        IsPlanDetailsStatementTextExpanded ? value : BuildPlanDetailsStatementTextPreview(value);
+
+    private string GetPlanDetailsStatementTextClass() =>
+        IsPlanDetailsStatementTextExpanded
+            ? "plan-detail-statement-text is-expanded"
+            : "plan-detail-statement-text";
+
+    private static bool IsPlanDetailsStatementTextRow(SummaryTableRow row) =>
+        string.Equals(row.Name, "StatementText", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPlanDetailsStatementTextExpandable(string value) =>
+        value.Length > PlanDetailsStatementTextPreviewLength
+        || value.Contains('\r')
+        || value.Contains('\n');
+
+    private static string BuildPlanDetailsStatementTextPreview(string value)
+    {
+        var compact = string.Join(
+            " ",
+            value.Split(new[] { '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(part => part.Trim())
+                .Where(part => !string.IsNullOrWhiteSpace(part)));
+
+        if (compact.Length <= PlanDetailsStatementTextPreviewLength)
+        {
+            return compact;
+        }
+
+        return $"{compact[..PlanDetailsStatementTextPreviewLength]}...";
     }
 
     private sealed record SummaryTableRow(
@@ -327,10 +609,7 @@ public partial class Home
 
     private void ParsePlan()
     {
-        ParseError = null;
-        EstimatedPlanError = null;
-        FileLoadMessages.Clear();
-        EstimatedPlanMessages.Clear();
+        ResetInputFeedback();
 
         try
         {
@@ -350,10 +629,7 @@ public partial class Home
 
     private async Task HandleFilesSelected(InputFileChangeEventArgs args)
     {
-        ParseError = null;
-        EstimatedPlanError = null;
-        FileLoadMessages.Clear();
-        EstimatedPlanMessages.Clear();
+        ResetInputFeedback();
 
         IReadOnlyList<IBrowserFile> files;
         try
@@ -411,10 +687,7 @@ public partial class Home
     private void SetInputMode(PlanInputMode inputMode)
     {
         ActiveInputMode = inputMode;
-        ParseError = null;
-        EstimatedPlanError = null;
-        FileLoadMessages.Clear();
-        EstimatedPlanMessages.Clear();
+        ResetInputFeedback();
     }
 
     private async Task FetchEstimatedPlan()
@@ -424,10 +697,7 @@ public partial class Home
             return;
         }
 
-        ParseError = null;
-        EstimatedPlanError = null;
-        FileLoadMessages.Clear();
-        EstimatedPlanMessages.Clear();
+        ResetInputFeedback();
 
         if (string.IsNullOrWhiteSpace(QueryConnectionString))
         {
@@ -459,7 +729,7 @@ public partial class Home
 
             EstimatedPlanCounter++;
             var baseLabel = string.IsNullOrWhiteSpace(QueryPlanLabel)
-                ? $"Estimated #{EstimatedPlanCounter.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+                ? $"Estimated #{EstimatedPlanCounter.ToString(CultureInfo.InvariantCulture)}"
                 : QueryPlanLabel.Trim();
 
             foreach (var showplan in showplans)
@@ -490,11 +760,27 @@ public partial class Home
         }
     }
 
+    private void ResetInputFeedback()
+    {
+        ParseError = null;
+        EstimatedPlanError = null;
+        FileLoadMessages.Clear();
+        EstimatedPlanMessages.Clear();
+    }
+
+    private void ResetPlanViewState()
+    {
+        SelectedAccessSummaryTab = AccessSummaryTab.AccessedObjects;
+        SelectedOptimizationSummaryTab = OptimizationSummaryTab.OptimizerStatsUsage;
+        IsPlanDetailsStatementTextExpanded = false;
+    }
+
     private void AddPlan(ShowplanDocument document, string label)
     {
         var plan = PlanWorkspace.CreateLoadedPlan(document, label, CurrentGraphLayoutDirection);
         Plans.Add(plan);
         ActivePlanId = plan.Id;
+        ResetPlanViewState();
         EnsureCompareSelection();
     }
 
@@ -504,6 +790,7 @@ public partial class Home
         {
             ActivePlanId = planId;
             TableActionMessage = null;
+            ResetPlanViewState();
             RefreshSelectedLayout();
         }
     }
@@ -615,6 +902,18 @@ public partial class Home
             : "Unable to copy to the clipboard. Use Download CSV instead.";
     }
 
+    private async Task ResetGraphPanelSizeAsync() =>
+        await JS.InvokeVoidAsync(
+            "mssqlPlanViewerGraphPan.resetPanelResizer",
+            graphPanelRef,
+            BuildGraphPanelResizeOptions());
+
+    private async Task ResetTablePanelSizeAsync() =>
+        await JS.InvokeVoidAsync(
+            "mssqlPlanViewerGraphPan.resetPanelResizer",
+            tablePanelRef,
+            BuildTablePanelResizeOptions());
+
     private string BuildExportBaseName()
     {
         var label = ActivePlan?.Label ?? "plan";
@@ -631,8 +930,8 @@ public partial class Home
         }
 
         return isInteger
-            ? ((long)Math.Round(value.Value)).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
-            : value.Value.ToString("#,0.######", System.Globalization.CultureInfo.InvariantCulture);
+            ? ((long)Math.Round(value.Value)).ToString("N0", CultureInfo.InvariantCulture)
+            : value.Value.ToString("#,0.######", CultureInfo.InvariantCulture);
     }
 
     private static string FormatMetricDelta(double? delta, bool isInteger)
@@ -654,7 +953,7 @@ public partial class Home
         }
 
         var sign = percent.Value > 0 ? "+" : string.Empty;
-        return sign + percent.Value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+        return sign + percent.Value.ToString("0.#", CultureInfo.InvariantCulture) + "%";
     }
 
     private static string? GetDeltaClass(double? delta)
@@ -676,13 +975,13 @@ public partial class Home
 
     private void OnStatementChanged(ChangeEventArgs args)
     {
-        var statementId = args.Value?.ToString();
-        if (string.IsNullOrWhiteSpace(statementId))
+        var statementKey = args.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(statementKey))
         {
             return;
         }
 
-        SelectStatement(statementId);
+        SelectStatementByKey(statementKey);
     }
 
     private void SelectStatement(string statementId)
@@ -694,7 +993,21 @@ public partial class Home
         }
 
         TableActionMessage = null;
+        ResetPlanViewState();
         PlanWorkspace.SelectStatement(plan, statementId, CurrentGraphLayoutDirection);
+    }
+
+    private void SelectStatementByKey(string statementKey)
+    {
+        var plan = ActivePlan;
+        if (plan is null)
+        {
+            return;
+        }
+
+        TableActionMessage = null;
+        ResetPlanViewState();
+        PlanWorkspace.SelectStatementByKey(plan, statementKey, CurrentGraphLayoutDirection);
     }
 
     private void SetGraphLayoutDirection(GraphLayoutDirection direction)
@@ -724,7 +1037,16 @@ public partial class Home
     {
         IsStatementDetailsSelected = false;
         SelectedNodeId = nodeId;
-        TableFocusRequestVersion++;
+        TableExpandRequestVersion++;
+        TableScrollRequestVersion++;
+    }
+
+    private void HandleReferencedNodeSelected(string nodeId)
+    {
+        IsStatementDetailsSelected = false;
+        SelectedNodeId = nodeId;
+        TableExpandRequestVersion++;
+        TableScrollRequestVersion++;
     }
 
     private void HandleGraphStatementSelected(string statementId)
@@ -758,10 +1080,7 @@ public partial class Home
         QueryPlanLabel = string.Empty;
         QueryCommandTimeoutSeconds = SqlEstimatedShowplanProvider.DefaultCommandTimeoutSeconds;
         ShowConnectionString = false;
-        ParseError = null;
-        EstimatedPlanError = null;
-        FileLoadMessages.Clear();
-        EstimatedPlanMessages.Clear();
+        ResetInputFeedback();
         ClearLoadedPlanHistory();
     }
 
@@ -774,23 +1093,27 @@ public partial class Home
         PastedPlanCounter = 0;
         EstimatedPlanCounter = 0;
         TableActionMessage = null;
-        TableFocusRequestVersion++;
+        ResetPlanViewState();
+        TableScrollRequestVersion++;
+        TableExpandRequestVersion++;
     }
 
     private const long MaxFileBytes = 10L * 1024 * 1024;
 
     private const int MaxFileCount = 50;
 
+    private const int PlanDetailsStatementTextPreviewLength = 180;
+
     private static string FormatInt(int? value) =>
         value?.ToString() ?? "n/a";
 
     private static string BuildEstimatedPlanLabel(string baseLabel, int ordinal, int count) =>
         count > 1
-            ? $"{baseLabel} ({ordinal.ToString(System.Globalization.CultureInfo.InvariantCulture)})"
+            ? $"{baseLabel} ({ordinal.ToString(CultureInfo.InvariantCulture)})"
             : baseLabel;
 
     private static string FormatEstimatedPlanLoadedMessage(int count) =>
         count == 1
             ? "1 estimated plan loaded."
-            : $"{count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} estimated plans loaded.";
+            : $"{count.ToString("N0", CultureInfo.InvariantCulture)} estimated plans loaded.";
 }

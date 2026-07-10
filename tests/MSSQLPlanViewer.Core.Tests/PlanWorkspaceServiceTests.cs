@@ -60,6 +60,38 @@ public sealed class PlanWorkspaceServiceTests
     }
 
     [Fact]
+    public void SelectStatementByKey_SelectsDuplicateStatementIdsAcrossBatches()
+    {
+        var first = TestPlanFactory.Statement(
+            new[] { TestPlanFactory.Node("1") },
+            rootNodeIds: new[] { "1" },
+            statementId: "1",
+            batchNumber: 1,
+            statementOrdinal: 1);
+        var second = TestPlanFactory.Statement(
+            new[] { TestPlanFactory.Node("2") },
+            rootNodeIds: new[] { "2" },
+            statementId: "1",
+            batchNumber: 2,
+            statementOrdinal: 2);
+        var service = new PlanWorkspaceService(
+            new StubDiagnosticsService(),
+            new StubLayoutService(),
+            new StubTableProjector());
+        var plan = service.CreateLoadedPlan(CreateDocument(first, second), "Plan A", GraphLayoutDirection.Vertical)
+            .WithState("1");
+
+        service.SelectStatementByKey(plan, second.StatementKey, GraphLayoutDirection.HorizontalSsms);
+
+        Assert.Equal("1", plan.SelectedStatementId);
+        Assert.Equal(second.StatementKey, plan.SelectedStatementKey);
+        Assert.Equal("2", Assert.Single(plan.CurrentRows).NodeId);
+        Assert.Null(plan.SelectedNodeId);
+        Assert.Null(plan.HoveredNodeId);
+        Assert.False(plan.IsStatementDetailsSelected);
+    }
+
+    [Fact]
     public void EnsureCompareSelection_ChoosesDistinctPlansWhenAvailable()
     {
         var service = new PlanWorkspaceService(

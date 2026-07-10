@@ -7,7 +7,7 @@ public sealed class PlanTableProjector : IPlanTableProjector
 {
     public IReadOnlyList<PlanTableRow> Project(StatementPlan statement)
     {
-        var maxCost = statement.Nodes.Max(node => node.EstimatedSubtreeCost ?? 0);
+        var displayCostBasis = PlanCostDisplay.ResolveDisplayCostBasis(statement);
         var nodesById = statement.Nodes.ToDictionary(node => node.NodeId, StringComparer.Ordinal);
         var childrenByParent = statement.Edges
             .GroupBy(edge => edge.FromNodeId, StringComparer.Ordinal)
@@ -26,12 +26,12 @@ public sealed class PlanTableProjector : IPlanTableProjector
 
         foreach (var rootNodeId in rootNodeIds)
         {
-            AppendRow(rootNodeId, parentNodeId: null, depth: 0, maxCost, nodesById, childrenByParent, visited, rows);
+            AppendRow(rootNodeId, parentNodeId: null, depth: 0, displayCostBasis, nodesById, childrenByParent, visited, rows);
         }
 
         foreach (var node in statement.Nodes.Where(node => !visited.Contains(node.NodeId)))
         {
-            AppendRow(node.NodeId, parentNodeId: null, depth: 0, maxCost, nodesById, childrenByParent, visited, rows);
+            AppendRow(node.NodeId, parentNodeId: null, depth: 0, displayCostBasis, nodesById, childrenByParent, visited, rows);
         }
 
         if (rows.Count > 0 && statement.Warnings.Count > 0)
@@ -51,7 +51,7 @@ public sealed class PlanTableProjector : IPlanTableProjector
         string nodeId,
         string? parentNodeId,
         int depth,
-        decimal maxCost,
+        decimal displayCostBasis,
         IReadOnlyDictionary<string, PlanNode> nodesById,
         IReadOnlyDictionary<string, string[]> childrenByParent,
         ISet<string> visited,
@@ -75,7 +75,7 @@ public sealed class PlanTableProjector : IPlanTableProjector
                 PhysicalOp: node.PhysicalOp,
                 LogicalOp: node.LogicalOp,
                 ObjectName: PlanDisplayFormatter.FormatObjectName(node.ObjectReference),
-                CostRatio: maxCost <= 0 ? 0 : (node.EstimatedSubtreeCost ?? 0) / maxCost,
+                CostRatio: PlanCostDisplay.CalculateCostRatio(node, displayCostBasis),
                 EstimatedSubtreeCost: node.EstimatedSubtreeCost,
                 EstimatedCpuCost: node.EstimatedCpuCost,
                 EstimatedIoCost: node.EstimatedIoCost,
@@ -89,21 +89,21 @@ public sealed class PlanTableProjector : IPlanTableProjector
                 ActualElapsedMs: node.RuntimeMetrics.ActualElapsedMs,
                 WarningCount: node.Warnings.Count,
                 IsParallel: node.IsParallel,
-                Summary: BuildSummary(node, maxCost)));
+                Summary: BuildSummary(node, displayCostBasis)));
 
         foreach (var childNodeId in childIds)
         {
-            AppendRow(childNodeId, nodeId, depth + 1, maxCost, nodesById, childrenByParent, visited, rows);
+            AppendRow(childNodeId, nodeId, depth + 1, displayCostBasis, nodesById, childrenByParent, visited, rows);
         }
     }
 
-    private static string BuildSummary(PlanNode node, decimal maxCost)
+    private static string BuildSummary(PlanNode node, decimal displayCostBasis)
     {
         var parts = new List<string>();
 
         if (node.EstimatedSubtreeCost.HasValue)
         {
-            var costRatio = maxCost <= 0 ? 0 : node.EstimatedSubtreeCost.Value / maxCost;
+            var costRatio = PlanCostDisplay.CalculateCostRatio(node, displayCostBasis);
             parts.Add($"Cost {PlanDisplayFormatter.FormatPercent(costRatio)}");
             parts.Add($"EstSubtree {PlanDisplayFormatter.FormatCost(node.EstimatedSubtreeCost)}");
         }

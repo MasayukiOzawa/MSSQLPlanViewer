@@ -23,8 +23,9 @@ public sealed class PlanDisplayFormatterTests
     [InlineData(1, "100%")]
     [InlineData(0.26, "26%")]
     [InlineData(0.534, "53%")]
-    [InlineData(0.005, "1%")]
-    public void FormatPercent_RoundsAwayFromZeroToWholePercent(double ratio, string expected) =>
+    [InlineData(0.005, "<1%")]
+    [InlineData(0.00001, "<1%")]
+    public void FormatPercent_DistinguishesSubOnePercentFromZero(double ratio, string expected) =>
         Assert.Equal(expected, PlanDisplayFormatter.FormatPercent((decimal)ratio));
 
     [Fact]

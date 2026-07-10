@@ -1,32 +1,13 @@
 using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
-using MSSQLPlanViewer.Core.Formatting;
 using MSSQLPlanViewer.Core.Models;
+using static MSSQLPlanViewer.Core.Parsing.ShowplanXml;
 
 namespace MSSQLPlanViewer.Core.Parsing;
 
 public sealed class ShowplanParser : IShowplanParser
 {
-    private static readonly string[] ExcludedXmlAttributePathPatterns =
-    [
-        "RelOp.OutputList.ColumnReference",
-        "RelOp.ComputeScalar.DefinedValue",
-        "RelOp.*.DefinedValues",
-        "RelOp.*.OrderBy",
-        "RelOp.StreamAggregate.GroupBy.ColumnReference",
-        "RelOp.RunTimeInformation",
-        "RelOp.*.HashKeysBuild.ColumnReference",
-        "RelOp.*.HashKeysProbe.ColumnReference",
-        "RelOp.*.OuterReferences.ColumnReference",
-        "RelOp.*.BuildResidual.ScalarOperator",
-        "RelOp.*.ProbeResidual.ScalarOperator",
-        "RelOp.**.ScalarExpressionList",
-        "RelOp.Bitmap.HashKeys.ColumnReference",
-        "RelOp.IndexScan.Predicate",
-        "RelOp.IndexScan.SeekPredicate"
-    ];
-
     private const int MaxXmlInputLength = 10 * 1024 * 1024;
 
     public ShowplanDocument Parse(string xml)
@@ -79,10 +60,52 @@ public sealed class ShowplanParser : IShowplanParser
     private static IReadOnlyList<StatementPlan> ParseStatements(XElement root)
     {
         var statements = new List<StatementPlan>();
+        ParseStatementElements(BuildStatementElementContexts(root), statements);
 
-        foreach (var statementElement in root.Descendants().Where(IsStatementElement))
+        return statements;
+    }
+
+    private static IReadOnlyList<StatementElementContext> BuildStatementElementContexts(XElement root)
+    {
+        var batches = root
+            .Descendants()
+            .Where(element => HasLocalName(element, "Batch"))
+            .ToArray();
+
+        if (batches.Length == 0)
         {
-            var queryPlan = statementElement.Elements().FirstOrDefault(element => HasLocalName(element, "QueryPlan"));
+            return root
+                .Descendants()
+                .Where(IsStatementElement)
+                .Select(statement => new StatementElementContext(statement, XmlBatchNumber: 1))
+                .ToArray();
+        }
+
+        var contexts = new List<StatementElementContext>();
+        for (var index = 0; index < batches.Length; index++)
+        {
+            contexts.AddRange(
+                batches[index]
+                    .Descendants()
+                    .Where(IsStatementElement)
+                    .Select(statement => new StatementElementContext(statement, index + 1)));
+        }
+
+        return contexts;
+    }
+
+    private static void ParseStatementElements(
+        IEnumerable<StatementElementContext> statementContexts,
+        ICollection<StatementPlan> statements)
+    {
+        var logicalBatchNumber = 0;
+        int? previousStatementId = null;
+        int? previousXmlBatchNumber = null;
+
+        foreach (var context in statementContexts)
+        {
+            var statementElement = context.StatementElement;
+            var queryPlan = GetChild(statementElement, "QueryPlan");
             if (queryPlan is null)
             {
                 continue;
@@ -107,17 +130,21 @@ public sealed class ShowplanParser : IShowplanParser
             }
 
             var statementElementName = statementElement.Name.LocalName;
+            var currentStatementId = GetIntAttribute(statementElement, "StatementId");
+            if (ShouldStartNewLogicalBatch(statements.Count, previousStatementId, currentStatementId, previousXmlBatchNumber, context.XmlBatchNumber))
+            {
+                logicalBatchNumber++;
+            }
+
+            previousStatementId = currentStatementId;
+            previousXmlBatchNumber = context.XmlBatchNumber;
+
             statements.Add(
                 new StatementPlan(
                     StatementId: GetAttribute(statementElement, "StatementId") ?? statements.Count.ToString(CultureInfo.InvariantCulture),
                     StatementType: GetAttribute(statementElement, "StatementType") ?? statementElementName,
                     StatementText: GetAttribute(statementElement, "StatementText") ?? "(statement text unavailable)",
-                    Summary: ParseStatementSummary(
-                        statementElement,
-                        queryPlan,
-                        BuildAccessedObjectEntries(rootRelOps),
-                        BuildAccessedIndexEntries(nodes),
-                        BuildSeekScanPredicateEntries(nodes)),
+                    Summary: StatementSummaryParser.ParseSummary(statementElement, queryPlan, rootRelOps, nodes),
                     Nodes: nodes,
                     Edges: edges,
                     Warnings: ParseStatementWarnings(statementElement, queryPlan),
@@ -128,15 +155,36 @@ public sealed class ShowplanParser : IShowplanParser
                         .Distinct(StringComparer.Ordinal)
                         .ToArray())
                 {
+                    BatchNumber = logicalBatchNumber,
+                    StatementOrdinal = statements.Count + 1,
                     StatementElementName = statementElementName,
                     StatementProperties = BuildAttributeProperties(statementElement),
-                    StatementSetOptionsProperties = BuildAttributeProperties(
-                        statementElement.Elements().FirstOrDefault(element => HasLocalName(element, "StatementSetOptions")))
+                    StatementSetOptionsProperties = BuildAttributeProperties(GetChild(statementElement, "StatementSetOptions"))
                 });
         }
-
-        return statements;
     }
+
+    private static bool ShouldStartNewLogicalBatch(
+        int parsedStatementCount,
+        int? previousStatementId,
+        int? currentStatementId,
+        int? previousXmlBatchNumber,
+        int currentXmlBatchNumber)
+    {
+        if (parsedStatementCount == 0)
+        {
+            return true;
+        }
+
+        if (previousStatementId.HasValue && currentStatementId.HasValue)
+        {
+            return currentStatementId.Value <= previousStatementId.Value;
+        }
+
+        return !previousXmlBatchNumber.HasValue || currentXmlBatchNumber != previousXmlBatchNumber.Value;
+    }
+
+    private sealed record StatementElementContext(XElement StatementElement, int XmlBatchNumber);
 
     private static void ParseRelOp(
         XElement relOpElement,
@@ -152,6 +200,7 @@ public sealed class ShowplanParser : IShowplanParser
         var objectReference = ParseObjectReference(relOpElement);
         var warnings = ParseWarnings(relOpElement);
         var runtimeMetrics = ParseRuntimeMetrics(relOpElement);
+        var parallelAttribute = GetAttribute(relOpElement, "Parallel");
 
         var node = new PlanNode(
             NodeId: nodeId,
@@ -162,14 +211,14 @@ public sealed class ShowplanParser : IShowplanParser
             EstimatedIoCost: GetDecimalAttribute(relOpElement, "EstimateIO"),
             EstimatedRows: GetDoubleAttribute(relOpElement, "EstimateRows"),
             AverageRowSize: GetDoubleAttribute(relOpElement, "AvgRowSize"),
-            IsParallel: string.Equals(GetAttribute(relOpElement, "Parallel"), "true", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(GetAttribute(relOpElement, "Parallel"), "1", StringComparison.OrdinalIgnoreCase),
+            IsParallel: string.Equals(parallelAttribute, "true", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(parallelAttribute, "1", StringComparison.OrdinalIgnoreCase),
             ObjectReference: objectReference,
             RuntimeMetrics: runtimeMetrics,
             Warnings: warnings,
-            Properties: BuildProperties(relOpElement, physicalOp, logicalOp, objectReference, runtimeMetrics, warnings),
-            XmlAttributes: BuildXmlAttributeProperties(relOpElement, excludeConfiguredSubtrees: true),
-            DetailXmlAttributes: BuildXmlAttributeProperties(relOpElement, excludeConfiguredSubtrees: false));
+            Properties: PlanNodePropertyBuilder.Build(relOpElement, physicalOp, logicalOp, objectReference, runtimeMetrics, warnings),
+            XmlAttributes: PlanNodePropertyBuilder.BuildXmlAttributeProperties(relOpElement, excludeConfiguredSubtrees: true),
+            DetailXmlAttributes: PlanNodePropertyBuilder.BuildXmlAttributeProperties(relOpElement, excludeConfiguredSubtrees: false));
 
         nodes.Add(node);
 
@@ -182,128 +231,6 @@ public sealed class ShowplanParser : IShowplanParser
         {
             ParseRelOp(childRelOp, nodes, edges, nodeId);
         }
-    }
-
-    private static StatementPlanSummary ParseStatementSummary(
-        XElement statementElement,
-        XElement queryPlanElement,
-        IReadOnlyList<AccessedObjectEntry> accessedObjectEntries,
-        IReadOnlyList<AccessedIndexEntry> accessedIndexEntries,
-        IReadOnlyList<SeekScanPredicateEntry> seekScanPredicateEntries) =>
-        new(
-            EstimatedSubtreeCost: GetDecimalAttribute(statementElement, "StatementSubTreeCost"),
-            EstimatedRows: GetDoubleAttribute(statementElement, "StatementEstRows"),
-            CachedPlanSizeKb: GetIntAttribute(queryPlanElement, "CachedPlanSize"),
-            CompileTimeMs: GetIntAttribute(queryPlanElement, "CompileTime"),
-            CompileCpuMs: GetIntAttribute(queryPlanElement, "CompileCPU"),
-            CompileMemoryKb: GetIntAttribute(queryPlanElement, "CompileMemory"),
-            EstimatedAvailableMemoryGrantKb: GetDoubleAttribute(queryPlanElement, "EstimatedAvailableMemoryGrant"),
-            EstimatedMemoryGrantKb: GetDoubleAttribute(queryPlanElement, "EstimatedMemoryGrant"),
-            QueryPlanProperties: BuildAttributeProperties(queryPlanElement),
-            QueryTimeStatsProperties: BuildAttributeProperties(queryPlanElement.Elements().FirstOrDefault(element => HasLocalName(element, "QueryTimeStats"))),
-            MemoryGrantInfoProperties: BuildAttributeProperties(queryPlanElement.Elements().FirstOrDefault(element => HasLocalName(element, "MemoryGrantInfo"))),
-            OptimizerHardwareDependentProperties: BuildAttributeProperties(queryPlanElement.Elements().FirstOrDefault(element => HasLocalName(element, "OptimizerHardwareDependentProperties"))),
-            OptimizerStatsUsageEntries: BuildOptimizerStatsUsageEntries(statementElement, queryPlanElement),
-            MissingIndexesEntries: BuildMissingIndexesEntries(queryPlanElement),
-            WaitStatsEntries: BuildWaitStatsEntries(queryPlanElement),
-            AccessedObjectEntries: accessedObjectEntries,
-            AccessedIndexEntries: accessedIndexEntries,
-            SeekScanPredicateEntries: seekScanPredicateEntries,
-            ParameterListEntries: BuildParameterListEntries(queryPlanElement));
-
-    private static IReadOnlyList<PlanWarning> ParseStatementWarnings(XElement statementElement, XElement queryPlanElement) =>
-        ParseWarnings(statementElement)
-            .Concat(ParseWarnings(queryPlanElement))
-            .ToArray();
-
-    private static IReadOnlyList<AccessedObjectEntry> BuildAccessedObjectEntries(IEnumerable<XElement> rootRelOps) =>
-        rootRelOps
-            .SelectMany(rootRelOp => rootRelOp.DescendantsAndSelf().Where(element => HasLocalName(element, "Object")))
-            .Select(objectElement => new AccessedObjectEntry(
-                Database: GetAttribute(objectElement, "Database"),
-                Schema: GetAttribute(objectElement, "Schema"),
-                Table: GetAttribute(objectElement, "Table") ?? string.Empty))
-            .Where(entry => !string.IsNullOrWhiteSpace(entry.Table))
-            .Distinct()
-            .OrderBy(entry => entry.Database ?? string.Empty, StringComparer.Ordinal)
-            .ThenBy(entry => entry.Schema ?? string.Empty, StringComparer.Ordinal)
-            .ThenBy(entry => entry.Table, StringComparer.Ordinal)
-            .ToArray();
-
-    private static IReadOnlyList<AccessedIndexEntry> BuildAccessedIndexEntries(IEnumerable<PlanNode> nodes) =>
-        nodes
-            .Where(node => !string.IsNullOrWhiteSpace(node.ObjectReference?.Index))
-            .Select(node => new AccessedIndexEntry(
-                NodeId: node.NodeId,
-                PhysicalOp: node.PhysicalOp,
-                LogicalOp: node.LogicalOp,
-                Database: node.ObjectReference?.Database,
-                Schema: node.ObjectReference?.Schema,
-                Table: node.ObjectReference?.Table,
-                Index: node.ObjectReference?.Index ?? string.Empty,
-                IndexKind: node.ObjectReference?.IndexKind,
-                EstimatedRows: node.EstimatedRows,
-                EstimatedIoCost: node.EstimatedIoCost,
-                ActualRows: node.RuntimeMetrics.ActualRows,
-                ActualLogicalReads: node.RuntimeMetrics.ActualLogicalReads,
-                ActualPhysicalReads: node.RuntimeMetrics.ActualPhysicalReads))
-            .ToArray();
-
-    private static IReadOnlyList<SeekScanPredicateEntry> BuildSeekScanPredicateEntries(IEnumerable<PlanNode> nodes) =>
-        nodes
-            .Where(IsObjectSeekOrScan)
-            .Select(node => new SeekScanPredicateEntry(
-                NodeId: node.NodeId,
-                PhysicalOp: node.PhysicalOp,
-                LogicalOp: node.LogicalOp,
-                Database: node.ObjectReference?.Database,
-                Schema: node.ObjectReference?.Schema,
-                Table: node.ObjectReference?.Table,
-                Index: node.ObjectReference?.Index,
-                IndexKind: node.ObjectReference?.IndexKind,
-                Predicate: GetPropertyValue(node.Properties, "Predicate"),
-                SeekPredicate: GetPropertyValue(node.Properties, "Seek predicate")))
-            .Where(entry => !string.IsNullOrWhiteSpace(entry.Predicate)
-                || !string.IsNullOrWhiteSpace(entry.SeekPredicate))
-            .ToArray();
-
-    private static bool IsObjectSeekOrScan(PlanNode node) =>
-        node.ObjectReference is not null
-        && (node.PhysicalOp.Contains("Seek", StringComparison.OrdinalIgnoreCase)
-            || node.PhysicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase));
-
-    private static string? GetPropertyValue(IEnumerable<PlanProperty> properties, string name) =>
-        properties.FirstOrDefault(property => string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))?.Value;
-
-    private static IReadOnlyList<ParameterListEntry> BuildParameterListEntries(XElement queryPlanElement)
-    {
-        var parameterListElement = queryPlanElement.Elements().FirstOrDefault(element => HasLocalName(element, "ParameterList"));
-        if (parameterListElement is null)
-        {
-            return Array.Empty<ParameterListEntry>();
-        }
-
-        var entries = new List<ParameterListEntry>();
-        foreach (var columnReferenceElement in parameterListElement.Elements().Where(element => HasLocalName(element, "ColumnReference")))
-        {
-            var parameter = GetAttribute(columnReferenceElement, "Column")
-                ?? GetAttribute(columnReferenceElement, "ParameterName")
-                ?? FormatColumnReference(columnReferenceElement);
-
-            if (string.IsNullOrWhiteSpace(parameter))
-            {
-                continue;
-            }
-
-            entries.Add(new ParameterListEntry(
-                Parameter: parameter,
-                DataType: GetAttribute(columnReferenceElement, "ParameterDataType"),
-                CompiledValue: GetAttribute(columnReferenceElement, "ParameterCompiledValue"),
-                RuntimeValue: GetAttribute(columnReferenceElement, "ParameterRuntimeValue"),
-                IsNullable: GetAttribute(columnReferenceElement, "ParameterIsNullable")));
-        }
-
-        return entries;
     }
 
     private static PlanObjectReference? ParseObjectReference(XElement relOpElement)
@@ -342,6 +269,7 @@ public sealed class ShowplanParser : IShowplanParser
             ActualRebinds: SumAttributes(counters, "ActualRebinds"),
             ActualRewinds: SumAttributes(counters, "ActualRewinds"))
         {
+            ActualExecutionMode = ResolveRuntimeActualExecutionMode(counters),
             Threads = counters
                 .Select(BuildThreadRuntimeMetrics)
                 .Where(metric => metric is not null)
@@ -369,12 +297,40 @@ public sealed class ShowplanParser : IShowplanParser
             ActualCpuMs: GetFirstDoubleAttribute(counterElement, "ActualCPUms", "ActualCpuMs"),
             ActualElapsedMs: GetFirstDoubleAttribute(counterElement, "ActualElapsedms", "ActualElapsedMs"),
             ActualRebinds: GetFirstDoubleAttribute(counterElement, "ActualRebinds"),
-            ActualRewinds: GetFirstDoubleAttribute(counterElement, "ActualRewinds"));
+            ActualRewinds: GetFirstDoubleAttribute(counterElement, "ActualRewinds"))
+        {
+            ActualExecutionMode = GetAttribute(counterElement, "ActualExecutionMode")
+        };
     }
+
+    private static string? ResolveRuntimeActualExecutionMode(IReadOnlyList<XElement> counters)
+    {
+        if (counters.Count > 1)
+        {
+            var threadOneMode = counters
+                .Where(counter => GetIntAttribute(counter, "Thread") == 1)
+                .Select(counter => GetAttribute(counter, "ActualExecutionMode"))
+                .FirstOrDefault(mode => !string.IsNullOrWhiteSpace(mode));
+
+            if (!string.IsNullOrWhiteSpace(threadOneMode))
+            {
+                return threadOneMode;
+            }
+        }
+
+        return counters
+            .Select(counter => GetAttribute(counter, "ActualExecutionMode"))
+            .FirstOrDefault(mode => !string.IsNullOrWhiteSpace(mode));
+    }
+
+    private static IReadOnlyList<PlanWarning> ParseStatementWarnings(XElement statementElement, XElement queryPlanElement) =>
+        ParseWarnings(statementElement)
+            .Concat(ParseWarnings(queryPlanElement))
+            .ToArray();
 
     private static IReadOnlyList<PlanWarning> ParseWarnings(XElement ownerElement)
     {
-        var warningsElement = ownerElement.Elements().FirstOrDefault(element => HasLocalName(element, "Warnings"));
+        var warningsElement = GetChild(ownerElement, "Warnings");
         if (warningsElement is null)
         {
             return Array.Empty<PlanWarning>();
@@ -396,692 +352,6 @@ public sealed class ShowplanParser : IShowplanParser
         return warnings;
     }
 
-    private static IReadOnlyList<PlanProperty> BuildProperties(
-        XElement relOpElement,
-        string physicalOp,
-        string logicalOp,
-        PlanObjectReference? objectReference,
-        PlanRuntimeMetrics runtimeMetrics,
-        IReadOnlyCollection<PlanWarning> warnings)
-    {
-        var properties = new List<PlanProperty>
-        {
-            new("Node ID", GetAttribute(relOpElement, "NodeId") ?? "n/a"),
-            new("Physical operation", physicalOp),
-            new("Logical operation", logicalOp)
-        };
-        var joinCondition = BuildJoinConditionText(relOpElement, physicalOp, logicalOp);
-
-        AddProperty(properties, "Object", PlanDisplayFormatter.FormatObjectName(objectReference), objectReference is not null);
-        AddProperty(properties, "Estimated rows", PlanDisplayFormatter.FormatNumber(GetDoubleAttribute(relOpElement, "EstimateRows")));
-        AddProperty(properties, "Estimated subtree cost", PlanDisplayFormatter.FormatCost(GetDecimalAttribute(relOpElement, "EstimatedTotalSubtreeCost")));
-        AddProperty(properties, "Estimated CPU cost", PlanDisplayFormatter.FormatCost(GetDecimalAttribute(relOpElement, "EstimateCPU")));
-        AddProperty(properties, "Estimated I/O cost", PlanDisplayFormatter.FormatCost(GetDecimalAttribute(relOpElement, "EstimateIO")));
-        AddProperty(properties, "Average row size", PlanDisplayFormatter.FormatNumber(GetDoubleAttribute(relOpElement, "AvgRowSize")));
-        AddProperty(properties, "Parallel", GetAttribute(relOpElement, "Parallel"));
-        AddProperty(properties, "ActualExecutionMode", GetAttribute(relOpElement, "ActualExecutionMode"));
-        AddProperty(properties, "Actual rows", PlanDisplayFormatter.FormatNumber(runtimeMetrics.ActualRows), runtimeMetrics.ActualRows.HasValue);
-        AddProperty(properties, "Actual executions", PlanDisplayFormatter.FormatNumber(runtimeMetrics.ActualExecutions), runtimeMetrics.ActualExecutions.HasValue);
-        AddProperty(properties, "Actual logical reads", PlanDisplayFormatter.FormatNumber(runtimeMetrics.ActualLogicalReads), runtimeMetrics.ActualLogicalReads.HasValue);
-        AddProperty(properties, "Actual physical reads", PlanDisplayFormatter.FormatNumber(runtimeMetrics.ActualPhysicalReads), runtimeMetrics.ActualPhysicalReads.HasValue);
-        AddProperty(properties, "Actual CPU ms", PlanDisplayFormatter.FormatNumber(runtimeMetrics.ActualCpuMs), runtimeMetrics.ActualCpuMs.HasValue);
-        AddProperty(properties, "Actual elapsed ms", PlanDisplayFormatter.FormatNumber(runtimeMetrics.ActualElapsedMs), runtimeMetrics.ActualElapsedMs.HasValue);
-        AddProperty(properties, "Actual rebinds", PlanDisplayFormatter.FormatNumber(runtimeMetrics.ActualRebinds), runtimeMetrics.ActualRebinds is > 0);
-        AddProperty(properties, "Actual rewinds", PlanDisplayFormatter.FormatNumber(runtimeMetrics.ActualRewinds), runtimeMetrics.ActualRewinds is > 0);
-        AddProperty(properties, "Join condition", joinCondition);
-        AddProperty(properties, "Predicate", BuildPredicateText(relOpElement), string.IsNullOrWhiteSpace(joinCondition));
-        AddProperty(properties, "Seek predicate", BuildSeekPredicateText(relOpElement));
-        AddProperty(properties, "Order by", BuildOrderByText(relOpElement));
-        AddProperty(properties, "Top expression", BuildTopExpressionText(relOpElement));
-        AddProperty(properties, "Tie columns", BuildColumnListText(relOpElement, "TieColumns"));
-        AddProperty(properties, "Group by", BuildColumnListText(relOpElement, "GroupBy"));
-        AddProperty(properties, "Defined values", BuildDefinedValuesText(relOpElement, physicalOp));
-
-        var outputColumns = GetOwnedDescendants(relOpElement, "OutputList")
-            .SelectMany(outputList => outputList.Descendants().Where(element => HasLocalName(element, "ColumnReference")))
-            .Select(FormatColumnReference)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.Ordinal)
-            .Take(8)
-            .ToArray();
-
-        if (outputColumns.Length > 0)
-        {
-            properties.Add(new PlanProperty("Output columns", string.Join(", ", outputColumns)));
-        }
-
-        properties.AddRange(BuildDirectIteratorElementProperties(relOpElement));
-
-        if (warnings.Count > 0)
-        {
-            properties.Add(new PlanProperty("Warnings", PlanDisplayFormatter.FormatWarningSummary(warnings)));
-        }
-
-        return properties;
-    }
-
-    private static void AddProperty(
-        ICollection<PlanProperty> properties,
-        string name,
-        string? value,
-        bool include = true)
-    {
-        if (!include || string.IsNullOrWhiteSpace(value))
-        {
-            return;
-        }
-
-        properties.Add(new PlanProperty(name, value));
-    }
-
-    private static string BuildDetails(XElement element)
-    {
-        var attributeText = string.Join(
-            ", ",
-            element.Attributes().Select(attribute => $"{attribute.Name.LocalName}={attribute.Value}"));
-
-        if (!string.IsNullOrWhiteSpace(attributeText))
-        {
-            return attributeText;
-        }
-
-        return string.IsNullOrWhiteSpace(element.Value) ? "true" : element.Value.Trim();
-    }
-
-    private static string? BuildPredicateText(XElement relOpElement)
-    {
-        var predicates = GetOwnedDescendants(relOpElement, "Predicate")
-            .Select(ExtractScalarStringOrDetails)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        return predicates.Length == 0 ? null : string.Join(" | ", predicates);
-    }
-
-    private static string? BuildJoinConditionText(XElement relOpElement, string physicalOp, string logicalOp)
-    {
-        if (!physicalOp.Contains("Join", StringComparison.OrdinalIgnoreCase)
-            && !logicalOp.Contains("Join", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(physicalOp, "Nested Loops", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var conditions = new List<string>();
-
-        foreach (var elementName in new[] { "Predicate", "ProbeResidual", "Residual" })
-        {
-            conditions.AddRange(
-                GetOwnedDescendants(relOpElement, elementName)
-                    .Select(ExtractScalarStringOrDetails)
-                    .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Cast<string>());
-        }
-
-        conditions.AddRange(BuildJoinColumnPairs(relOpElement, "OuterSideJoinColumns", "InnerSideJoinColumns"));
-        conditions.AddRange(BuildJoinColumnPairs(relOpElement, "HashKeysBuild", "HashKeysProbe"));
-
-        var outerReferences = GetOwnedDescendants(relOpElement, "OuterReferences")
-            .SelectMany(referenceElement => referenceElement.Descendants().Where(element => HasLocalName(element, "ColumnReference")))
-            .Select(FormatColumnReference)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        if (outerReferences.Length > 0)
-        {
-            conditions.Add($"Outer references: {string.Join(", ", outerReferences)}");
-        }
-
-        var distinctConditions = conditions
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        return distinctConditions.Length == 0 ? null : string.Join(" | ", distinctConditions);
-    }
-
-    private static string? BuildSeekPredicateText(XElement relOpElement)
-    {
-        var segments = new List<string>();
-
-        foreach (var rangeElementName in new[] { "Prefix", "StartRange", "EndRange" })
-        {
-            foreach (var rangeElement in GetOwnedDescendants(relOpElement, rangeElementName))
-            {
-                var columns = rangeElement.Elements()
-                    .FirstOrDefault(element => HasLocalName(element, "RangeColumns"))
-                    ?.Descendants()
-                    .Where(element => HasLocalName(element, "ColumnReference"))
-                    .Select(FormatColumnReference)
-                    .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .ToArray()
-                    ?? Array.Empty<string>();
-
-                var expressions = rangeElement.Elements()
-                    .FirstOrDefault(element => HasLocalName(element, "RangeExpressions"))
-                    ?.Descendants()
-                    .Where(element => HasLocalName(element, "ScalarOperator"))
-                    .Select(scalarElement => GetAttribute(scalarElement, "ScalarString"))
-                    .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Cast<string>()
-                    .ToArray()
-                    ?? Array.Empty<string>();
-
-                var label = rangeElementName switch
-                {
-                    "Prefix" => "Prefix",
-                    "StartRange" => "Start",
-                    "EndRange" => "End",
-                    _ => rangeElementName
-                };
-
-                var scanType = GetAttribute(rangeElement, "ScanType");
-                if (!string.IsNullOrWhiteSpace(scanType))
-                {
-                    label += $" ({scanType})";
-                }
-
-                if (columns.Length > 0 && columns.Length == expressions.Length)
-                {
-                    segments.Add($"{label}: {string.Join(", ", columns.Zip(expressions, (column, expression) => $"{column} = {expression}"))}");
-                    continue;
-                }
-
-                var combined = expressions.Length > 0 ? string.Join(", ", expressions) : string.Join(", ", columns);
-                if (!string.IsNullOrWhiteSpace(combined))
-                {
-                    segments.Add($"{label}: {combined}");
-                }
-            }
-        }
-
-        var distinctSegments = segments
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        return distinctSegments.Length == 0 ? null : string.Join(" | ", distinctSegments);
-    }
-
-    private static string? BuildOrderByText(XElement relOpElement)
-    {
-        var orderByColumns = GetOwnedDescendants(relOpElement, "OrderByColumn")
-            .Select(orderByColumnElement =>
-            {
-                var column = orderByColumnElement.Descendants()
-                    .FirstOrDefault(element => HasLocalName(element, "ColumnReference"));
-                var columnName = column is null ? null : FormatColumnReference(column);
-                if (string.IsNullOrWhiteSpace(columnName))
-                {
-                    return null;
-                }
-
-                var ascending = GetAttribute(orderByColumnElement, "Ascending");
-                var direction = string.Equals(ascending, "false", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(ascending, "0", StringComparison.OrdinalIgnoreCase)
-                    ? "DESC"
-                    : "ASC";
-
-                return $"{columnName} {direction}";
-            })
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Cast<string>()
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        return orderByColumns.Length == 0 ? null : string.Join(", ", orderByColumns);
-    }
-
-    private static string? BuildTopExpressionText(XElement relOpElement) =>
-        GetOwnedDescendants(relOpElement, "TopExpression")
-            .Select(ExtractScalarStringOrDetails)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.Ordinal)
-            .FirstOrDefault();
-
-    private static string? BuildColumnListText(XElement relOpElement, string elementName)
-    {
-        var columns = GetOwnedDescendants(relOpElement, elementName)
-            .SelectMany(element => element.Descendants().Where(column => HasLocalName(column, "ColumnReference")))
-            .Select(FormatColumnReference)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        return columns.Length == 0 ? null : string.Join(", ", columns);
-    }
-
-    private static string? BuildDefinedValuesText(XElement relOpElement, string physicalOp)
-    {
-        var values = GetOwnedDescendants(relOpElement, "DefinedValue")
-            .Select(definedValueElement =>
-            {
-                var targetColumn = definedValueElement.Descendants()
-                    .FirstOrDefault(element => HasLocalName(element, "ColumnReference"));
-                var target = targetColumn is null ? null : FormatColumnReference(targetColumn);
-                var scalarString = definedValueElement.Descendants()
-                    .Where(element => HasLocalName(element, "ScalarOperator"))
-                    .Select(scalarElement => GetAttribute(scalarElement, "ScalarString"))
-                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-
-                if (!string.IsNullOrWhiteSpace(scalarString))
-                {
-                    return !string.IsNullOrWhiteSpace(target)
-                        ? $"{target} = {scalarString}"
-                        : scalarString;
-                }
-
-                if (physicalOp.Contains("Bitmap", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(target))
-                {
-                    return target;
-                }
-
-                return null;
-            })
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Cast<string>()
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        return values.Length == 0 ? null : string.Join(" | ", values);
-    }
-
-    private static IEnumerable<PlanProperty> BuildDirectIteratorElementProperties(XElement relOpElement)
-    {
-        foreach (var element in relOpElement.Elements())
-        {
-            if (HasLocalName(element, "OutputList")
-                || HasLocalName(element, "RunTimeInformation")
-                || HasLocalName(element, "Warnings"))
-            {
-                continue;
-            }
-
-            var attributeText = string.Join(
-                ", ",
-                element.Attributes().Select(attribute => $"{attribute.Name.LocalName}={attribute.Value}"));
-
-            if (string.IsNullOrWhiteSpace(attributeText))
-            {
-                continue;
-            }
-
-            yield return new PlanProperty(element.Name.LocalName, attributeText);
-        }
-    }
-
-    private static IReadOnlyList<PlanProperty> BuildXmlAttributeProperties(
-        XElement relOpElement,
-        bool excludeConfiguredSubtrees)
-    {
-        var properties = new List<PlanProperty>();
-        TraverseOwnedElements(relOpElement, relOpElement.Name.LocalName);
-        return properties;
-
-        void TraverseOwnedElements(XElement element, string path)
-        {
-            if (excludeConfiguredSubtrees && ShouldExcludeXmlAttributePath(path))
-            {
-                return;
-            }
-
-            foreach (var attribute in element.Attributes())
-            {
-                properties.Add(new PlanProperty($"{path}.{attribute.Name.LocalName}", attribute.Value));
-            }
-
-            var children = element.Elements()
-                .Where(child => !HasLocalName(child, "RelOp"))
-                .ToArray();
-            var totalCounts = children
-                .GroupBy(child => child.Name.LocalName)
-                .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
-            var seenCounts = new Dictionary<string, int>(StringComparer.Ordinal);
-
-            foreach (var child in children)
-            {
-                var currentIndex = seenCounts.TryGetValue(child.Name.LocalName, out var seenCount)
-                    ? seenCount + 1
-                    : 1;
-                seenCounts[child.Name.LocalName] = currentIndex;
-
-                var childPath = totalCounts[child.Name.LocalName] > 1
-                    ? $"{path}.{child.Name.LocalName}[{currentIndex}]"
-                    : $"{path}.{child.Name.LocalName}";
-
-                TraverseOwnedElements(child, childPath);
-            }
-        }
-    }
-
-    private static bool ShouldExcludeXmlAttributePath(string path) =>
-        ShowplanXmlAttributePathMatcher.MatchesAny(path, ExcludedXmlAttributePathPatterns);
-    private static IEnumerable<string> BuildJoinColumnPairs(XElement relOpElement, string leftElementName, string rightElementName)
-    {
-        var leftColumns = GetOwnedDescendants(relOpElement, leftElementName)
-            .SelectMany(element => element.Descendants().Where(column => HasLocalName(column, "ColumnReference")))
-            .Select(FormatColumnReference)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToArray();
-
-        var rightColumns = GetOwnedDescendants(relOpElement, rightElementName)
-            .SelectMany(element => element.Descendants().Where(column => HasLocalName(column, "ColumnReference")))
-            .Select(FormatColumnReference)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToArray();
-
-        if (leftColumns.Length > 0 && leftColumns.Length == rightColumns.Length)
-        {
-            for (var index = 0; index < leftColumns.Length; index++)
-            {
-                yield return $"{leftColumns[index]} = {rightColumns[index]}";
-            }
-
-            yield break;
-        }
-
-        leftColumns = GetOwnedDescendants(relOpElement, leftElementName)
-            .SelectMany(element => element.Descendants().Where(scalar => HasLocalName(scalar, "ScalarOperator")))
-            .Select(scalarElement => GetAttribute(scalarElement, "ScalarString"))
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Cast<string>()
-            .ToArray();
-
-        rightColumns = GetOwnedDescendants(relOpElement, rightElementName)
-            .SelectMany(element => element.Descendants().Where(scalar => HasLocalName(scalar, "ScalarOperator")))
-            .Select(scalarElement => GetAttribute(scalarElement, "ScalarString"))
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Cast<string>()
-            .ToArray();
-
-        if (leftColumns.Length > 0 && leftColumns.Length == rightColumns.Length)
-        {
-            for (var index = 0; index < leftColumns.Length; index++)
-            {
-                yield return $"{leftColumns[index]} = {rightColumns[index]}";
-            }
-        }
-    }
-
-    private static string ExtractScalarStringOrDetails(XElement element)
-    {
-        var scalarString = element.Descendants()
-            .FirstOrDefault(descendant => HasLocalName(descendant, "ScalarOperator"))
-            ?.Attributes()
-            .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "ScalarString", StringComparison.OrdinalIgnoreCase))
-            ?.Value;
-
-        return !string.IsNullOrWhiteSpace(scalarString)
-            ? scalarString
-            : BuildDetails(element);
-    }
-
-    private static string FormatColumnReference(XElement columnReferenceElement)
-    {
-        var alias = GetAttribute(columnReferenceElement, "Alias");
-        var table = GetAttribute(columnReferenceElement, "Table");
-        var column = GetAttribute(columnReferenceElement, "Column");
-
-        var prefix = alias ?? table;
-        if (!string.IsNullOrWhiteSpace(prefix) && !string.IsNullOrWhiteSpace(column))
-        {
-            return $"{prefix}.{column}";
-        }
-
-        return column ?? string.Empty;
-    }
-
-    private static IReadOnlyList<PlanProperty> BuildAttributeProperties(XElement? element)
-    {
-        if (element is null)
-        {
-            return Array.Empty<PlanProperty>();
-        }
-
-        return element.Attributes()
-            .Select(attribute => new PlanProperty(attribute.Name.LocalName, attribute.Value))
-            .ToArray();
-    }
-
-    private static IReadOnlyList<MissingIndexEntry> BuildMissingIndexesEntries(XElement queryPlanElement)
-    {
-        var missingIndexesElement = queryPlanElement.Elements().FirstOrDefault(element => HasLocalName(element, "MissingIndexes"));
-        if (missingIndexesElement is null)
-        {
-            return Array.Empty<MissingIndexEntry>();
-        }
-
-        var entries = new List<MissingIndexEntry>();
-        var groupIndex = 1;
-
-        foreach (var groupElement in missingIndexesElement.Elements().Where(element => HasLocalName(element, "MissingIndexGroup")))
-        {
-            var impact = FormatNumericText(GetAttribute(groupElement, "Impact"));
-            var missingIndexElements = groupElement.Elements().Where(element => HasLocalName(element, "MissingIndex")).ToArray();
-            if (missingIndexElements.Length == 0)
-            {
-                continue;
-            }
-
-            foreach (var missingIndexElement in missingIndexElements)
-            {
-                var label = BuildMissingIndexLabel(missingIndexElement, groupIndex);
-                string? equalityColumns = null;
-                string? inequalityColumns = null;
-                string? includeColumns = null;
-
-                foreach (var columnGroupElement in missingIndexElement.Elements().Where(element => HasLocalName(element, "ColumnGroup")))
-                {
-                    var usage = GetAttribute(columnGroupElement, "Usage") ?? "Columns";
-                    var columns = columnGroupElement.Elements()
-                        .Where(element => HasLocalName(element, "Column"))
-                        .Select(columnElement => GetAttribute(columnElement, "Name"))
-                        .Where(name => !string.IsNullOrWhiteSpace(name))
-                        .Cast<string>()
-                        .ToArray();
-
-                    if (columns.Length > 0)
-                    {
-                        var value = string.Join(", ", columns);
-                        switch (usage.ToUpperInvariant())
-                        {
-                            case "EQUALITY":
-                                equalityColumns = AppendGroupValue(equalityColumns, value);
-                                break;
-                            case "INEQUALITY":
-                                inequalityColumns = AppendGroupValue(inequalityColumns, value);
-                                break;
-                            case "INCLUDE":
-                                includeColumns = AppendGroupValue(includeColumns, value);
-                                break;
-                        }
-                    }
-                }
-
-                entries.Add(new MissingIndexEntry(
-                    ObjectName: label,
-                    Impact: string.IsNullOrWhiteSpace(impact) ? null : impact,
-                    EqualityColumns: equalityColumns,
-                    InequalityColumns: inequalityColumns,
-                    IncludeColumns: includeColumns));
-                groupIndex++;
-            }
-        }
-
-        return entries;
-    }
-
-    private static string AppendGroupValue(string? existing, string value) =>
-        string.IsNullOrWhiteSpace(existing)
-            ? value
-            : $"{existing} | {value}";
-
-    private static IReadOnlyList<OptimizerStatsUsageEntry> BuildOptimizerStatsUsageEntries(XElement statementElement, XElement queryPlanElement)
-    {
-        var optimizerStatsUsageElement =
-            statementElement.Elements().FirstOrDefault(element => HasLocalName(element, "OptimizerStatsUsage"))
-            ?? queryPlanElement.Elements().FirstOrDefault(element => HasLocalName(element, "OptimizerStatsUsage"));
-
-        if (optimizerStatsUsageElement is null)
-        {
-            return Array.Empty<OptimizerStatsUsageEntry>();
-        }
-
-        return optimizerStatsUsageElement.Elements()
-            .Where(element => HasLocalName(element, "StatisticsInfo"))
-            .Select(statisticsInfoElement => new OptimizerStatsUsageEntry(
-                Database: GetAttribute(statisticsInfoElement, "Database"),
-                Schema: GetAttribute(statisticsInfoElement, "Schema"),
-                Table: GetAttribute(statisticsInfoElement, "Table"),
-                Statistics: GetAttribute(statisticsInfoElement, "Statistics"),
-                LastUpdate: GetAttribute(statisticsInfoElement, "LastUpdate"),
-                StatisticsModificationCount: GetAttribute(statisticsInfoElement, "StatisticsModificationCount") ?? GetAttribute(statisticsInfoElement, "ModificationCount"),
-                LastSample: GetAttribute(statisticsInfoElement, "LastSample"),
-                SamplingPercent: GetAttribute(statisticsInfoElement, "SamplingPercent"),
-                Steps: GetAttribute(statisticsInfoElement, "Steps"),
-                Rows: GetAttribute(statisticsInfoElement, "Rows"),
-                UnfilteredRows: GetAttribute(statisticsInfoElement, "UnfilteredRows"),
-                PersistedSamplePercent: GetAttribute(statisticsInfoElement, "PersistedSamplePercent")))
-            .ToArray();
-    }
-
-    private static IReadOnlyList<WaitStatEntry> BuildWaitStatsEntries(XElement queryPlanElement)
-    {
-        var waitStatsElement = queryPlanElement.Elements().FirstOrDefault(element => HasLocalName(element, "WaitStats"));
-        if (waitStatsElement is null)
-        {
-            return Array.Empty<WaitStatEntry>();
-        }
-
-        var entries = new List<WaitStatEntry>();
-        var waitIndex = 1;
-
-        foreach (var waitElement in waitStatsElement.Elements().Where(element => HasLocalName(element, "Wait")))
-        {
-            var waitType = GetAttribute(waitElement, "WaitType");
-            entries.Add(new WaitStatEntry(
-                WaitType: !string.IsNullOrWhiteSpace(waitType) ? waitType! : $"Wait {waitIndex}",
-                WaitTimeMs: GetDoubleAttribute(waitElement, "WaitTimeMs"),
-                WaitCount: GetDoubleAttribute(waitElement, "WaitCount")));
-            waitIndex++;
-        }
-
-        return entries;
-    }
-
-    private static string BuildMissingIndexLabel(XElement missingIndexElement, int ordinal)
-    {
-        var parts = new[]
-        {
-            GetAttribute(missingIndexElement, "Database"),
-            GetAttribute(missingIndexElement, "Schema"),
-            GetAttribute(missingIndexElement, "Table")
-        }
-        .Where(value => !string.IsNullOrWhiteSpace(value))
-        .ToArray();
-
-        return parts.Length > 0
-            ? string.Join(".", parts)
-            : $"Missing index {ordinal.ToString(CultureInfo.InvariantCulture)}";
-    }
-
-    private static string FormatNumericText(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
-        if (double.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var numericValue))
-        {
-            return PlanDisplayFormatter.FormatNumber(numericValue);
-        }
-
-        return value;
-    }
-
-    private static IEnumerable<XElement> GetOwnedDescendants(XElement ownerRelOp, string localName) =>
-        ownerRelOp
-            .Descendants()
-            .Where(element =>
-                HasLocalName(element, localName) &&
-                ReferenceEquals(GetNearestAncestorByLocalName(element, "RelOp"), ownerRelOp));
-
-    private static XElement? GetNearestAncestorByLocalName(XElement element, string localName)
-    {
-        var current = element.Parent;
-        while (current is not null)
-        {
-            if (HasLocalName(current, localName))
-            {
-                return current;
-            }
-
-            current = current.Parent;
-        }
-
-        return null;
-    }
-
     private static bool IsStatementElement(XElement element) =>
         element.Name.LocalName.StartsWith("Stmt", StringComparison.Ordinal);
-
-    private static bool HasLocalName(XElement element, string localName) =>
-        string.Equals(element.Name.LocalName, localName, StringComparison.Ordinal);
-
-    private static string? GetAttribute(XElement element, string name) =>
-        element.Attributes()
-            .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, name, StringComparison.OrdinalIgnoreCase))
-            ?.Value;
-
-    private static decimal? GetDecimalAttribute(XElement element, string name) =>
-        decimal.TryParse(GetAttribute(element, name), NumberStyles.Any, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : null;
-
-    private static double? GetDoubleAttribute(XElement element, string name) =>
-        double.TryParse(GetAttribute(element, name), NumberStyles.Any, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : null;
-
-    private static int? GetIntAttribute(XElement element, string name) =>
-        int.TryParse(GetAttribute(element, name), NumberStyles.Any, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : null;
-
-    private static double? GetFirstDoubleAttribute(XElement element, params string[] names)
-    {
-        foreach (var name in names)
-        {
-            if (double.TryParse(GetAttribute(element, name), NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
-            {
-                return value;
-            }
-        }
-
-        return null;
-    }
-
-    private static double? SumAttributes(IEnumerable<XElement> elements, params string[] names)
-    {
-        double total = 0;
-        var found = false;
-
-        foreach (var element in elements)
-        {
-            foreach (var name in names)
-            {
-                if (double.TryParse(GetAttribute(element, name), NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
-                {
-                    total += value;
-                    found = true;
-                    break;
-                }
-            }
-        }
-
-        return found ? total : null;
-    }
 }

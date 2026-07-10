@@ -230,47 +230,61 @@
         </section>
     }
 
-    @if (SelectedStatement is null)
-    {
-        <aside class="details-column">
-            <section class="card-surface sticky-panel operator-pane" aria-live="polite" @ref="detailsPaneRef">
-                <div class="details-resizer"
-                     @ref="detailsResizeHandleRef"
-                     role="separator"
-                     aria-label="Resize operator details panel"
-                     aria-orientation="vertical"></div>
-                <div class="section-header compact">
-                    <div>
-                        <div class="eyebrow">Operator details</div>
-                        <h2>No operator selected</h2>
-                    </div>
-                </div>
-            </section>
-        </aside>
-    }
-
     @if (Document is not null && SelectedStatement is not null)
     {
         var warningRows = GetWarningRows(SelectedStatement);
+        var statementItems = GetVisibleProperties(SelectedStatement.StatementProperties);
+        var statementSetOptionsItems = GetVisibleProperties(SelectedStatement.StatementSetOptionsProperties);
         var statementSummaryItems = GetStatementSummaryItems(SelectedStatement);
         var queryTimeStatsItems = GetVisibleProperties(SelectedStatement.Summary.QueryTimeStatsProperties);
         var queryPlanItems = GetVisibleProperties(SelectedStatement.Summary.QueryPlanProperties);
+        var threadStatItems = SelectedStatement.Summary.ThreadStatProperties
+            .Select(GetVisibleProperties)
+            .Where(properties => properties.Count > 0)
+            .ToArray();
         var memoryGrantInfoItems = GetVisibleProperties(SelectedStatement.Summary.MemoryGrantInfoProperties);
         var optimizerHardwareItems = GetVisibleProperties(SelectedStatement.Summary.OptimizerHardwareDependentProperties);
         var missingIndexItems = SelectedStatement.Summary.MissingIndexesEntries;
         var accessedObjectItems = SelectedStatement.Summary.AccessedObjectEntries;
         var accessedIndexItems = SelectedStatement.Summary.AccessedIndexEntries;
         var seekScanPredicateItems = SelectedStatement.Summary.SeekScanPredicateEntries;
+        var implicitConversionItems = SelectedStatement.Summary.ImplicitConversionEntries;
         var parameterListItems = SelectedStatement.Summary.ParameterListEntries;
         var statementDiagnostics = ActivePlan?.Diagnostics
             .Where(diagnostic => diagnostic.StatementId == SelectedStatement.StatementId)
             .ToArray() ?? Array.Empty<PlanDiagnostic>();
         var combinedPlanDetailRows = BuildCombinedPlanDetailRows(
+            SelectedStatement.StatementElementName,
+            statementItems,
+            statementSetOptionsItems,
             queryTimeStatsItems,
             statementSummaryItems,
             queryPlanItems,
+            threadStatItems,
             memoryGrantInfoItems,
             optimizerHardwareItems);
+        var hasAccessSummaryItems = accessedObjectItems.Count > 0
+            || accessedIndexItems.Count > 0
+            || missingIndexItems.Count > 0
+            || parameterListItems.Count > 0
+            || seekScanPredicateItems.Count > 0
+            || implicitConversionItems.Count > 0;
+        var activeAccessSummaryTab = ResolveAccessSummaryTab(
+            accessedObjectItems.Count,
+            accessedIndexItems.Count,
+            missingIndexItems.Count,
+            parameterListItems.Count,
+            seekScanPredicateItems.Count,
+            implicitConversionItems.Count);
+        var optimizerStatsUsageItems = SelectedStatement.Summary.OptimizerStatsUsageEntries;
+        var waitStatsItems = SelectedStatement.Summary.WaitStatsEntries;
+        var hasOptimizationSummaryItems = optimizerStatsUsageItems.Count > 0
+            || waitStatsItems.Count > 0
+            || warningRows.Count > 0;
+        var activeOptimizationSummaryTab = ResolveOptimizationSummaryTab(
+            optimizerStatsUsageItems.Count,
+            waitStatsItems.Count,
+            warningRows.Count);
 
         <section class="summary-grid summary-grid-top">
             <div class="summary-card card-surface">
@@ -289,19 +303,23 @@
             </div>
             <div class="summary-card card-surface">
                 <span class="summary-label">Statements</span>
-                <strong>@Document.Statements.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</strong>
-                <small>Current: #@SelectedStatement.StatementId</small>
+                <div class="summary-count-line">
+                    <strong>@GetBatchCount(Document).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</strong>
+                    <span>Batch</span>
+                    <strong>@Document.Statements.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</strong>
+                    <span>Statement</span>
+                </div>
             </div>
             <div class="summary-card summary-statement-card card-surface">
                 <span class="summary-label">Selected statement</span>
-                <strong>#@SelectedStatement.StatementId</strong>
-                <small>@SelectedStatement.StatementType</small>
+                <strong>Batch #@(SelectedStatement.BatchNumber.ToString(System.Globalization.CultureInfo.InvariantCulture))</strong>
+                <small>#@SelectedStatement.StatementId - @SelectedStatement.StatementType</small>
                 @if (Document.Statements.Count > 1)
                 {
-                    <select class="form-select form-select-sm statement-select" value="@SelectedStatementId" @onchange="OnStatementChanged">
+                    <select class="form-select form-select-sm statement-select" value="@SelectedStatementKey" @onchange="OnStatementChanged">
                         @foreach (var statement in Document.Statements)
                         {
-                            <option value="@statement.StatementId">#@statement.StatementId - @statement.StatementType</option>
+                            <option value="@statement.StatementKey">@BuildStatementSelectionLabel(statement)</option>
                         }
                     </select>
                 }
@@ -330,363 +348,391 @@
             </div>
         </section>
 
-        @if (combinedPlanDetailRows.Count > 0)
+        @if (hasAccessSummaryItems)
         {
-            <section class="card-surface summary-table-card">
+            <section class="card-surface summary-table-card access-summary-card">
                 <div class="section-header compact">
                     <div>
-                        <span class="summary-label">Plan details</span>
+                        <span class="summary-label">Access summary</span>
+                    </div>
+                    <div class="access-tabs" role="tablist" aria-label="Access summary views">
+                        <button type="button"
+                                role="tab"
+                                class="@GetAccessSummaryTabClass(AccessSummaryTab.AccessedObjects, activeAccessSummaryTab)"
+                                aria-selected="@(activeAccessSummaryTab == AccessSummaryTab.AccessedObjects)"
+                                disabled="@(accessedObjectItems.Count == 0)"
+                                @onclick="@(() => SetAccessSummaryTab(AccessSummaryTab.AccessedObjects))">
+                            Accessed objects
+                            <span>@accessedObjectItems.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                        </button>
+                        <button type="button"
+                                role="tab"
+                                class="@GetAccessSummaryTabClass(AccessSummaryTab.AccessedIndexes, activeAccessSummaryTab)"
+                                aria-selected="@(activeAccessSummaryTab == AccessSummaryTab.AccessedIndexes)"
+                                disabled="@(accessedIndexItems.Count == 0)"
+                                @onclick="@(() => SetAccessSummaryTab(AccessSummaryTab.AccessedIndexes))">
+                            Accessed indexes
+                            <span>@accessedIndexItems.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                        </button>
+                        <button type="button"
+                                role="tab"
+                                class="@GetAccessSummaryTabClass(AccessSummaryTab.MissingIndexes, activeAccessSummaryTab)"
+                                aria-selected="@(activeAccessSummaryTab == AccessSummaryTab.MissingIndexes)"
+                                disabled="@(missingIndexItems.Count == 0)"
+                                @onclick="@(() => SetAccessSummaryTab(AccessSummaryTab.MissingIndexes))">
+                            Missing indexes
+                            <span>@missingIndexItems.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                        </button>
+                        <button type="button"
+                                role="tab"
+                                class="@GetAccessSummaryTabClass(AccessSummaryTab.ParameterList, activeAccessSummaryTab)"
+                                aria-selected="@(activeAccessSummaryTab == AccessSummaryTab.ParameterList)"
+                                disabled="@(parameterListItems.Count == 0)"
+                                @onclick="@(() => SetAccessSummaryTab(AccessSummaryTab.ParameterList))">
+                            ParameterList
+                            <span>@parameterListItems.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                        </button>
+                        <button type="button"
+                                role="tab"
+                                class="@GetAccessSummaryTabClass(AccessSummaryTab.SeekScanPredicates, activeAccessSummaryTab)"
+                                aria-selected="@(activeAccessSummaryTab == AccessSummaryTab.SeekScanPredicates)"
+                                disabled="@(seekScanPredicateItems.Count == 0)"
+                                @onclick="@(() => SetAccessSummaryTab(AccessSummaryTab.SeekScanPredicates))">
+                            Seek/Scan predicates
+                            <span>@seekScanPredicateItems.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                        </button>
+                        <button type="button"
+                                role="tab"
+                                class="@GetAccessSummaryTabClass(AccessSummaryTab.ImplicitConversions, activeAccessSummaryTab)"
+                                aria-selected="@(activeAccessSummaryTab == AccessSummaryTab.ImplicitConversions)"
+                                disabled="@(implicitConversionItems.Count == 0)"
+                                @onclick="@(() => SetAccessSummaryTab(AccessSummaryTab.ImplicitConversions))">
+                            Implicit conversions
+                            <span>@implicitConversionItems.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                        </button>
                     </div>
                 </div>
+
                 <div class="summary-table-shell">
-                    <table class="table table-sm align-middle summary-table plan-detail-table">
-                        <thead>
-                            <tr>
-                                <th scope="col">Section</th>
-                                <th scope="col">Property</th>
-                                <th scope="col">Value</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var row in combinedPlanDetailRows)
-                            {
-                                <tr>
-                                    @if (row.ShowSection)
+                    @switch (activeAccessSummaryTab)
+                    {
+                        case AccessSummaryTab.AccessedObjects:
+                            <table class="table table-sm align-middle summary-table access-object-table" role="tabpanel">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Table</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in accessedObjectItems)
                                     {
-                                        <td class="object-cell section-cell" rowspan="@row.SectionRowSpan">@row.Section</td>
+                                        <tr>
+                                            <td class="object-cell">@BuildAccessedObjectName(item)</td>
+                                        </tr>
                                     }
-                                    <td>@row.Name</td>
-                                    <td class="details-cell">@row.Value</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
+                                </tbody>
+                            </table>
+                            break;
+                        case AccessSummaryTab.AccessedIndexes:
+                            <table class="table table-sm align-middle summary-table" role="tabpanel">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Node</th>
+                                        <th scope="col">Physical operation</th>
+                                        <th scope="col">Logical operation</th>
+                                        <th scope="col">Table</th>
+                                        <th scope="col">Index</th>
+                                        <th scope="col">Index kind</th>
+                                        <th scope="col" class="numeric-cell">Est. rows</th>
+                                        <th scope="col" class="numeric-cell">Est. I/O cost</th>
+                                        <th scope="col" class="numeric-cell">Actual rows</th>
+                                        <th scope="col" class="numeric-cell">Actual logical reads</th>
+                                        <th scope="col" class="numeric-cell">Actual physical reads</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in accessedIndexItems)
+                                    {
+                                        <tr class="@(string.Equals(item.NodeId, SelectedNodeId, StringComparison.Ordinal) ? "selected-warning-row" : null)">
+                                            <td class="warning-node-cell">
+                                                <button type="button"
+                                                        class="warning-node-button"
+                                                        @onclick="@(() => HandleReferencedNodeSelected(item.NodeId))">
+                                                    Node @item.NodeId
+                                                </button>
+                                            </td>
+                                            <td>@FormatSummaryValue(item.PhysicalOp)</td>
+                                            <td>@FormatSummaryValue(item.LogicalOp)</td>
+                                            <td class="object-cell">@BuildAccessedIndexTableName(item)</td>
+                                            <td class="object-cell">@FormatSummaryValue(item.Index)</td>
+                                            <td>@FormatSummaryValue(item.IndexKind)</td>
+                                            <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.EstimatedRows))</td>
+                                            <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatCost(item.EstimatedIoCost))</td>
+                                            <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.ActualRows))</td>
+                                            <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.ActualLogicalReads))</td>
+                                            <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.ActualPhysicalReads))</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            break;
+                        case AccessSummaryTab.MissingIndexes:
+                            <table class="table table-sm align-middle summary-table missing-index-table" role="tabpanel">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Impact</th>
+                                        <th scope="col">Object</th>
+                                        <th scope="col">Equality</th>
+                                        <th scope="col">Inequality</th>
+                                        <th scope="col">Include</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in missingIndexItems)
+                                    {
+                                        <tr>
+                                            <td class="numeric-cell">@FormatSummaryValue(item.Impact)</td>
+                                            <td class="object-cell">@item.ObjectName</td>
+                                            <td class="details-cell">@FormatSummaryValue(item.EqualityColumns)</td>
+                                            <td class="details-cell">@FormatSummaryValue(item.InequalityColumns)</td>
+                                            <td class="details-cell">@FormatSummaryValue(item.IncludeColumns)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            break;
+                        case AccessSummaryTab.ParameterList:
+                            <table class="table table-sm align-middle summary-table parameter-list-table" role="tabpanel">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Parameter</th>
+                                        <th scope="col">Data type</th>
+                                        <th scope="col">Compiled value</th>
+                                        <th scope="col">Runtime value</th>
+                                        <th scope="col">Nullable</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in parameterListItems)
+                                    {
+                                        <tr>
+                                            <td>@FormatSummaryValue(item.Parameter)</td>
+                                            <td>@FormatSummaryValue(item.DataType)</td>
+                                            <td class="details-cell">@FormatSummaryValue(item.CompiledValue)</td>
+                                            <td class="details-cell">@FormatSummaryValue(item.RuntimeValue)</td>
+                                            <td>@FormatSummaryValue(item.IsNullable)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            break;
+                        case AccessSummaryTab.SeekScanPredicates:
+                            <table class="table table-sm align-middle summary-table seek-scan-predicate-table" role="tabpanel">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Node</th>
+                                        <th scope="col">Physical operation</th>
+                                        <th scope="col">Logical operation</th>
+                                        <th scope="col">Table</th>
+                                        <th scope="col">Index</th>
+                                        <th scope="col">Index kind</th>
+                                        <th scope="col">Seek predicate</th>
+                                        <th scope="col">Predicate</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in seekScanPredicateItems)
+                                    {
+                                        <tr class="@(string.Equals(item.NodeId, SelectedNodeId, StringComparison.Ordinal) ? "selected-warning-row" : null)">
+                                            <td class="warning-node-cell">
+                                                <button type="button"
+                                                        class="warning-node-button"
+                                                        @onclick="@(() => HandleReferencedNodeSelected(item.NodeId))">
+                                                    Node @item.NodeId
+                                                </button>
+                                            </td>
+                                            <td>@FormatSummaryValue(item.PhysicalOp)</td>
+                                            <td>@FormatSummaryValue(item.LogicalOp)</td>
+                                            <td class="object-cell">@BuildSeekScanPredicateTableName(item)</td>
+                                            <td class="object-cell">@FormatSummaryValue(item.Index)</td>
+                                            <td>@FormatSummaryValue(item.IndexKind)</td>
+                                            <td class="predicate-cell">@FormatSummaryValue(item.SeekPredicate)</td>
+                                            <td class="predicate-cell">@FormatSummaryValue(item.Predicate)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            break;
+                        case AccessSummaryTab.ImplicitConversions:
+                            <table class="table table-sm align-middle summary-table implicit-conversion-table" role="tabpanel">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Node</th>
+                                        <th scope="col">Physical operation</th>
+                                        <th scope="col">Logical operation</th>
+                                        <th scope="col">Object</th>
+                                        <th scope="col">Source</th>
+                                        <th scope="col">Expression</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in implicitConversionItems)
+                                    {
+                                        <tr class="@(string.Equals(item.NodeId, SelectedNodeId, StringComparison.Ordinal) ? "selected-warning-row" : null)">
+                                            <td class="warning-node-cell">
+                                                <button type="button"
+                                                        class="warning-node-button"
+                                                        @onclick="@(() => HandleReferencedNodeSelected(item.NodeId))">
+                                                    Node @item.NodeId
+                                                </button>
+                                            </td>
+                                            <td>@FormatSummaryValue(item.PhysicalOp)</td>
+                                            <td>@FormatSummaryValue(item.LogicalOp)</td>
+                                            <td class="object-cell">@FormatSummaryValue(BuildImplicitConversionObjectName(item))</td>
+                                            <td>@FormatSummaryValue(item.Source)</td>
+                                            <td class="predicate-cell">@FormatSummaryValue(item.Expression)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            break;
+                    }
                 </div>
             </section>
         }
 
-        @if (parameterListItems.Count > 0)
+        @if (hasOptimizationSummaryItems)
         {
-            <section class="card-surface summary-table-card">
+            <section class="card-surface summary-table-card optimization-summary-card">
                 <div class="section-header compact">
                     <div>
-                        <span class="summary-label">ParameterList</span>
+                        <span class="summary-label">Optimization summary</span>
+                    </div>
+                    <div class="access-tabs" role="tablist" aria-label="Optimization summary views">
+                        <button type="button"
+                                role="tab"
+                                class="@GetOptimizationSummaryTabClass(OptimizationSummaryTab.OptimizerStatsUsage, activeOptimizationSummaryTab)"
+                                aria-selected="@(activeOptimizationSummaryTab == OptimizationSummaryTab.OptimizerStatsUsage)"
+                                disabled="@(optimizerStatsUsageItems.Count == 0)"
+                                @onclick="@(() => SetOptimizationSummaryTab(OptimizationSummaryTab.OptimizerStatsUsage))">
+                            OptimizerStatsUsage
+                            <span>@optimizerStatsUsageItems.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                        </button>
+                        <button type="button"
+                                role="tab"
+                                class="@GetOptimizationSummaryTabClass(OptimizationSummaryTab.WaitStats, activeOptimizationSummaryTab)"
+                                aria-selected="@(activeOptimizationSummaryTab == OptimizationSummaryTab.WaitStats)"
+                                disabled="@(waitStatsItems.Count == 0)"
+                                @onclick="@(() => SetOptimizationSummaryTab(OptimizationSummaryTab.WaitStats))">
+                            Wait stats
+                            <span>@waitStatsItems.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                        </button>
+                        <button type="button"
+                                role="tab"
+                                class="@GetOptimizationSummaryTabClass(OptimizationSummaryTab.WarningDetails, activeOptimizationSummaryTab)"
+                                aria-selected="@(activeOptimizationSummaryTab == OptimizationSummaryTab.WarningDetails)"
+                                disabled="@(warningRows.Count == 0)"
+                                @onclick="@(() => SetOptimizationSummaryTab(OptimizationSummaryTab.WarningDetails))">
+                            Warning details
+                            <span>@warningRows.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                        </button>
                     </div>
                 </div>
                 <div class="summary-table-shell">
-                    <table class="table table-sm align-middle summary-table">
-                        <thead>
-                            <tr>
-                                <th scope="col">Parameter</th>
-                                <th scope="col">Data type</th>
-                                <th scope="col">Compiled value</th>
-                                <th scope="col">Runtime value</th>
-                                <th scope="col">Nullable</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var item in parameterListItems)
-                            {
-                                <tr>
-                                    <td>@FormatSummaryValue(item.Parameter)</td>
-                                    <td>@FormatSummaryValue(item.DataType)</td>
-                                    <td class="details-cell">@FormatSummaryValue(item.CompiledValue)</td>
-                                    <td class="details-cell">@FormatSummaryValue(item.RuntimeValue)</td>
-                                    <td>@FormatSummaryValue(item.IsNullable)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        }
-
-        @if (accessedObjectItems.Count > 0)
-        {
-            <section class="card-surface summary-table-card">
-                <div class="section-header compact">
-                    <div>
-                        <span class="summary-label">Accessed objects</span>
-                    </div>
-                </div>
-                <div class="summary-table-shell">
-                    <table class="table table-sm align-middle summary-table">
-                        <thead>
-                            <tr>
-                                <th scope="col">Table</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var item in accessedObjectItems)
-                            {
-                                <tr>
-                                    <td class="object-cell">@BuildAccessedObjectName(item)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        }
-
-        @if (accessedIndexItems.Count > 0)
-        {
-            <section class="card-surface summary-table-card">
-                <div class="section-header compact">
-                    <div>
-                        <span class="summary-label">Accessed indexes</span>
-                    </div>
-                </div>
-                <div class="summary-table-shell">
-                    <table class="table table-sm align-middle summary-table">
-                        <thead>
-                            <tr>
-                                <th scope="col">Node</th>
-                                <th scope="col">Physical operation</th>
-                                <th scope="col">Logical operation</th>
-                                <th scope="col">Table</th>
-                                <th scope="col">Index</th>
-                                <th scope="col">Index kind</th>
-                                <th scope="col" class="numeric-cell">Est. rows</th>
-                                <th scope="col" class="numeric-cell">Est. I/O cost</th>
-                                <th scope="col" class="numeric-cell">Actual rows</th>
-                                <th scope="col" class="numeric-cell">Actual logical reads</th>
-                                <th scope="col" class="numeric-cell">Actual physical reads</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var item in accessedIndexItems)
-                            {
-                                <tr class="@(string.Equals(item.NodeId, SelectedNodeId, StringComparison.Ordinal) ? "selected-warning-row" : null)">
-                                    <td class="warning-node-cell">
-                                        <button type="button"
-                                                class="warning-node-button"
-                                                @onclick="@(() => HandleGraphNodeSelected(item.NodeId))">
-                                            Node @item.NodeId
-                                        </button>
-                                    </td>
-                                    <td>@FormatSummaryValue(item.PhysicalOp)</td>
-                                    <td>@FormatSummaryValue(item.LogicalOp)</td>
-                                    <td class="object-cell">@BuildAccessedIndexTableName(item)</td>
-                                    <td class="object-cell">@FormatSummaryValue(item.Index)</td>
-                                    <td>@FormatSummaryValue(item.IndexKind)</td>
-                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.EstimatedRows))</td>
-                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatCost(item.EstimatedIoCost))</td>
-                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.ActualRows))</td>
-                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.ActualLogicalReads))</td>
-                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.ActualPhysicalReads))</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        }
-
-        @if (seekScanPredicateItems.Count > 0)
-        {
-            <section class="card-surface summary-table-card">
-                <div class="section-header compact">
-                    <div>
-                        <span class="summary-label">Seek/Scan predicates</span>
-                    </div>
-                </div>
-                <div class="summary-table-shell">
-                    <table class="table table-sm align-middle summary-table seek-scan-predicate-table">
-                        <thead>
-                            <tr>
-                                <th scope="col">Node</th>
-                                <th scope="col">Physical operation</th>
-                                <th scope="col">Logical operation</th>
-                                <th scope="col">Table</th>
-                                <th scope="col">Index</th>
-                                <th scope="col">Index kind</th>
-                                <th scope="col">Seek predicate</th>
-                                <th scope="col">Predicate</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var item in seekScanPredicateItems)
-                            {
-                                <tr class="@(string.Equals(item.NodeId, SelectedNodeId, StringComparison.Ordinal) ? "selected-warning-row" : null)">
-                                    <td class="warning-node-cell">
-                                        <button type="button"
-                                                class="warning-node-button"
-                                                @onclick="@(() => HandleGraphNodeSelected(item.NodeId))">
-                                            Node @item.NodeId
-                                        </button>
-                                    </td>
-                                    <td>@FormatSummaryValue(item.PhysicalOp)</td>
-                                    <td>@FormatSummaryValue(item.LogicalOp)</td>
-                                    <td class="object-cell">@BuildSeekScanPredicateTableName(item)</td>
-                                    <td class="object-cell">@FormatSummaryValue(item.Index)</td>
-                                    <td>@FormatSummaryValue(item.IndexKind)</td>
-                                    <td class="predicate-cell">@FormatSummaryValue(item.SeekPredicate)</td>
-                                    <td class="predicate-cell">@FormatSummaryValue(item.Predicate)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        }
-
-        @if (SelectedStatement.Summary.OptimizerStatsUsageEntries.Count > 0)
-        {
-            <section class="card-surface summary-table-card">
-                <div class="section-header compact">
-                    <div>
-                        <span class="summary-label">OptimizerStatsUsage</span>
-                    </div>
-                </div>
-                <div class="summary-table-shell">
-                    <table class="table table-sm align-middle summary-table">
-                        <thead>
-                            <tr>
-                                <th scope="col">Table</th>
-                                <th scope="col">Statistics</th>
-                                <th scope="col">Last update</th>
-                                <th scope="col">Modification count</th>
-                                <th scope="col">Last sample</th>
-                                <th scope="col">Sampling %</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var item in SelectedStatement.Summary.OptimizerStatsUsageEntries)
-                            {
-                                <tr>
-                                    <td>@BuildOptimizerStatsUsageTableName(item)</td>
-                                    <td>@FormatSummaryValue(item.Statistics)</td>
-                                    <td>@FormatSummaryValue(item.LastUpdate)</td>
-                                    <td class="numeric-cell">@FormatSummaryValue(item.StatisticsModificationCount)</td>
-                                    <td>@FormatSummaryValue(item.LastSample)</td>
-                                    <td class="numeric-cell">@FormatSummaryValue(item.SamplingPercent)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        }
-
-        @if (missingIndexItems.Count > 0)
-        {
-            <section class="card-surface summary-table-card">
-                <div class="section-header compact">
-                    <div>
-                        <span class="summary-label">MissingIndexes</span>
-                    </div>
-                </div>
-                <div class="summary-table-shell">
-                    <table class="table table-sm align-middle summary-table missing-index-table">
-                        <thead>
-                            <tr>
-                                <th scope="col">Impact</th>
-                                <th scope="col">Object</th>
-                                <th scope="col">EQUALITY</th>
-                                <th scope="col">INEQUALITY</th>
-                                <th scope="col">INCLUDE</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var item in missingIndexItems)
-                            {
-                                <tr>
-                                    <td class="numeric-cell">@FormatSummaryValue(item.Impact)</td>
-                                    <td class="object-cell">@item.ObjectName</td>
-                                    <td class="details-cell">@FormatSummaryValue(item.EqualityColumns)</td>
-                                    <td class="details-cell">@FormatSummaryValue(item.InequalityColumns)</td>
-                                    <td class="details-cell">@FormatSummaryValue(item.IncludeColumns)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        }
-
-        @if (SelectedStatement.Summary.WaitStatsEntries.Count > 0)
-        {
-            <section class="card-surface summary-table-card">
-                <div class="section-header compact">
-                    <div>
-                        <span class="summary-label">WaitStats</span>
-                    </div>
-                </div>
-                <div class="summary-table-shell">
-                    <table class="table table-sm align-middle summary-table wait-stats-table">
-                        <thead>
-                            <tr>
-                                <th scope="col">Wait type</th>
-                                <th scope="col">WaitTimeMs</th>
-                                <th scope="col">WaitCount</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var item in SelectedStatement.Summary.WaitStatsEntries)
-                            {
-                                <tr>
-                                    <td class="object-cell">@item.WaitType</td>
-                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.WaitTimeMs))</td>
-                                    <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.WaitCount))</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        }
-
-        @if (warningRows.Count > 0)
-        {
-            <section class="card-surface summary-table-card warning-details-card">
-                <div class="section-header compact">
-                    <div>
-                        <span class="summary-label">Warning details</span>
-                    </div>
-                </div>
-                <div class="summary-table-shell warning-table-shell">
-                    <table class="table table-sm align-middle summary-table warning-details-table">
-                        <thead>
-                            <tr>
-                                <th scope="col" class="warning-node-col">Node</th>
-                                <th scope="col">Operator</th>
-                                <th scope="col">Warning</th>
-                                <th scope="col">Details</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var row in warningRows)
-                            {
-                                <tr class="@(string.Equals(row.NodeId, SelectedNodeId, StringComparison.Ordinal) ? "selected-warning-row" : null)">
-                                    <td class="warning-node-cell">
-                                        @if (row.NodeId is null)
-                                        {
-                                            <span class="warning-statement-label">Statement</span>
-                                        }
-                                        else
-                                        {
-                                            <button type="button"
-                                                    class="warning-node-button"
-                                                    @onclick="@(() => HandleGraphNodeSelected(row.NodeId!))">
-                                                Node @row.NodeId
-                                            </button>
-                                        }
-                                    </td>
-                                    <td class="warning-operator-cell">@row.Operator</td>
-                                    <td class="warning-name-cell">@row.Warning</td>
-                                    <td class="warning-details-cell">@row.Details</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
+                    @switch (activeOptimizationSummaryTab)
+                    {
+                        case OptimizationSummaryTab.OptimizerStatsUsage:
+                            <table class="table table-sm align-middle summary-table optimizer-stats-table" role="tabpanel">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Table</th>
+                                        <th scope="col">Statistics</th>
+                                        <th scope="col">Last update</th>
+                                        <th scope="col" class="numeric-cell">Modification count</th>
+                                        <th scope="col">Last sample</th>
+                                        <th scope="col" class="numeric-cell">Sampling %</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in optimizerStatsUsageItems)
+                                    {
+                                        <tr>
+                                            <td>@BuildOptimizerStatsUsageTableName(item)</td>
+                                            <td>@FormatSummaryValue(item.Statistics)</td>
+                                            <td>@FormatSummaryValue(item.LastUpdate)</td>
+                                            <td class="numeric-cell">@FormatSummaryValue(item.StatisticsModificationCount)</td>
+                                            <td>@FormatSummaryValue(item.LastSample)</td>
+                                            <td class="numeric-cell">@FormatSummaryValue(item.SamplingPercent)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            break;
+                        case OptimizationSummaryTab.WaitStats:
+                            <table class="table table-sm align-middle summary-table wait-stats-table" role="tabpanel">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Wait type</th>
+                                        <th scope="col" class="numeric-cell">WaitTimeMs</th>
+                                        <th scope="col" class="numeric-cell">WaitCount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in waitStatsItems)
+                                    {
+                                        <tr>
+                                            <td class="object-cell">@item.WaitType</td>
+                                            <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.WaitTimeMs))</td>
+                                            <td class="numeric-cell">@FormatSummaryValue(PlanDisplayFormatter.FormatNumber(item.WaitCount))</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            break;
+                        case OptimizationSummaryTab.WarningDetails:
+                            <table class="table table-sm align-middle summary-table warning-details-table" role="tabpanel">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" class="warning-node-col">Node</th>
+                                        <th scope="col">Operator</th>
+                                        <th scope="col">Warning</th>
+                                        <th scope="col">Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in warningRows)
+                                    {
+                                        <tr class="@(string.Equals(row.NodeId, SelectedNodeId, StringComparison.Ordinal) ? "selected-warning-row" : null)">
+                                            <td class="warning-node-cell">
+                                                @if (row.NodeId is null)
+                                                {
+                                                    <span class="warning-statement-label">Statement</span>
+                                                }
+                                                else
+                                                {
+                                                    <button type="button"
+                                                            class="warning-node-button"
+                                                            @onclick="@(() => HandleReferencedNodeSelected(row.NodeId!))">
+                                                        Node @row.NodeId
+                                                    </button>
+                                                }
+                                            </td>
+                                            <td class="warning-operator-cell">@row.Operator</td>
+                                            <td class="warning-name-cell">@row.Warning</td>
+                                            <td class="warning-details-cell">@row.Details</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            break;
+                    }
                 </div>
             </section>
         }
 
         <div class="viewer-grid @(SelectedStatement is not null ? "with-details" : null)">
             <div class="viewer-main">
-                <section class="card-surface">
+                <section class="card-surface graph-panel-card" @ref="graphPanelRef">
                     <div class="section-header">
                         <div>
                             <h2>Graphical plan</h2>
@@ -731,6 +777,12 @@
                                 <input type="checkbox" class="form-check-input" @bind="ShowCriticalPath" />
                                 <span class="graph-threshold-label">Critical path (est. cost)</span>
                             </label>
+                            <button type="button"
+                                    class="btn btn-outline-secondary btn-sm"
+                                    title="Reset graphical plan size"
+                                    @onclick="ResetGraphPanelSizeAsync">
+                                Reset size
+                            </button>
                         </div>
                     </div>
 
@@ -744,14 +796,23 @@
                                    OnSelectNode="HandleGraphNodeSelected"
                                    OnSelectStatement="HandleGraphStatementSelected"
                                    OnHoverNode="HandleNodeHovered" />
+                    <div class="graph-panel-resize-handle"
+                         @ref="graphPanelResizeHandleRef"
+                         aria-label="Resize graphical plan section"></div>
                 </section>
 
-                <section class="card-surface">
+                <section class="card-surface table-panel-card" @ref="tablePanelRef">
                     <div class="section-header">
                         <div>
                             <h2>Table view</h2>
                         </div>
                         <div class="table-header-actions">
+                            <button type="button"
+                                    class="btn btn-outline-secondary btn-sm"
+                                    title="Reset table view size"
+                                    @onclick="ResetTablePanelSizeAsync">
+                                Reset size
+                            </button>
                             <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="DownloadTableCsv" disabled="@(CurrentRows.Count == 0)">Download CSV</button>
                             <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="DownloadTableMarkdown" disabled="@(CurrentRows.Count == 0)">Download Markdown</button>
                             <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="DownloadTableJson" disabled="@(CurrentRows.Count == 0)">Download JSON</button>
@@ -767,25 +828,70 @@
                     <PlanNodeTable @key="ActivePlanId"
                                    Rows="CurrentRows"
                                    SelectedNodeId="@SelectedNodeId"
-                                   FocusRequestVersion="TableFocusRequestVersion"
+                                   ExpandRequestVersion="TableExpandRequestVersion"
+                                   ScrollRequestVersion="TableScrollRequestVersion"
                                    OnSelectNode="HandleTableNodeSelected"
                                    OnHoverNode="HandleNodeHovered" />
+                    <div class="table-panel-resize-handle"
+                         @ref="tablePanelResizeHandleRef"
+                         aria-label="Resize table view section"></div>
                 </section>
 
-                <section class="card-surface diagnostics-card">
-                    <div class="section-header compact">
-                        <div>
-                            <span class="summary-label">Diagnostics</span>
-                        </div>
-                    </div>
-                    <PlanDiagnosticsPanel Diagnostics="statementDiagnostics" OnSelectNode="HandleGraphNodeSelected" />
-                </section>
             </div>
             @if (SelectedStatement is not null)
             {
                 var showStatementDetails = IsStatementDetailsSelected && OverlayNode is null;
                 var showDetails = OverlayNode is not null || showStatementDetails;
                 <aside class="details-column">
+                    @if (combinedPlanDetailRows.Count > 0)
+                    {
+                        <section class="card-surface summary-table-card plan-details-card details-plan-card">
+                            <div class="section-header compact">
+                                <div>
+                                    <span class="summary-label">Plan details</span>
+                                </div>
+                            </div>
+                            <div class="summary-table-shell">
+                                <table class="table table-sm align-middle summary-table plan-detail-table">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Section</th>
+                                            <th scope="col">Property</th>
+                                            <th scope="col">Value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var row in combinedPlanDetailRows)
+                                        {
+                                            <tr>
+                                                @if (row.ShowSection)
+                                                {
+                                                    <td class="object-cell section-cell" rowspan="@row.SectionRowSpan">@row.Section</td>
+                                                }
+                                                <td>@row.Name</td>
+                                                <td class="details-cell">
+                                                    @if (IsPlanDetailsStatementTextRow(row))
+                                                    {
+                                                        <div class="@GetPlanDetailsStatementTextClass()">@GetPlanDetailsStatementTextValue(row.Value)</div>
+                                                        @if (IsPlanDetailsStatementTextExpandable(row.Value))
+                                                        {
+                                                            <button type="button" class="btn btn-outline-secondary btn-sm plan-text-toggle" @onclick="TogglePlanDetailsStatementText">
+                                                                @(IsPlanDetailsStatementTextExpanded ? "Collapse" : "Expand")
+                                                            </button>
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        @row.Value
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                    }
                     <section class="card-surface sticky-panel operator-pane" aria-live="polite" @ref="detailsPaneRef">
                         <div class="details-resizer"
                              @ref="detailsResizeHandleRef"
@@ -817,5 +923,14 @@
                 </aside>
             }
         </div>
+
+        <section class="card-surface diagnostics-card">
+            <div class="section-header compact">
+                <div>
+                    <span class="summary-label">Diagnostics</span>
+                </div>
+            </div>
+            <PlanDiagnosticsPanel Diagnostics="statementDiagnostics" OnSelectNode="HandleReferencedNodeSelected" />
+        </section>
     }
 </div>

@@ -16,11 +16,11 @@ else
                     <th scope="col" class="operator-col sticky-col sticky-col-2" aria-sort="@GetAriaSort(SortColumn.PhysicalOp)">
                         <button type="button" class="sort-header" @onclick="@(() => ToggleSort(SortColumn.PhysicalOp))">Operator tree<span class="sort-indicator">@GetSortIndicator(SortColumn.PhysicalOp)</span></button>
                     </th>
-                    <th scope="col" class="logical-col sticky-col sticky-col-3" aria-sort="@GetAriaSort(SortColumn.LogicalOp)">
-                        <button type="button" class="sort-header" @onclick="@(() => ToggleSort(SortColumn.LogicalOp))">Logical<span class="sort-indicator">@GetSortIndicator(SortColumn.LogicalOp)</span></button>
-                    </th>
-                    <th scope="col" class="object-col" aria-sort="@GetAriaSort(SortColumn.ObjectName)">
+                    <th scope="col" class="object-col sticky-col sticky-col-3" aria-sort="@GetAriaSort(SortColumn.ObjectName)">
                         <button type="button" class="sort-header" @onclick="@(() => ToggleSort(SortColumn.ObjectName))">Object<span class="sort-indicator">@GetSortIndicator(SortColumn.ObjectName)</span></button>
+                    </th>
+                    <th scope="col" class="numeric warning-col" aria-sort="@GetAriaSort(SortColumn.WarningCount)">
+                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.WarningCount))">Warnings<span class="sort-indicator">@GetSortIndicator(SortColumn.WarningCount)</span></button>
                     </th>
                     <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.CostRatio)">
                         <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.CostRatio))">Cost %<span class="sort-indicator">@GetSortIndicator(SortColumn.CostRatio)</span></button>
@@ -57,9 +57,6 @@ else
                     </th>
                     <th scope="col" class="numeric" aria-sort="@GetAriaSort(SortColumn.ActualElapsedMs)">
                         <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.ActualElapsedMs))">Actual Elapsed ms<span class="sort-indicator">@GetSortIndicator(SortColumn.ActualElapsedMs)</span></button>
-                    </th>
-                    <th scope="col" class="numeric warning-col" aria-sort="@GetAriaSort(SortColumn.WarningCount)">
-                        <button type="button" class="sort-header numeric-header" @onclick="@(() => ToggleSort(SortColumn.WarningCount))">Warnings<span class="sort-indicator">@GetSortIndicator(SortColumn.WarningCount)</span></button>
                     </th>
                 </tr>
             </thead>
@@ -184,7 +181,13 @@ else
                                     }
                                 </svg>
                                 </span>
-                                <span class="@GetOperatorNameClass(isScan)">@row.PhysicalOp</span>
+                                <span class="@GetOperatorNameClass(isScan)">
+                                    @row.PhysicalOp
+                                    @if (!string.IsNullOrWhiteSpace(BlankIfNa(row.LogicalOp)))
+                                    {
+                                        <span class="tree-logical-op">(@BlankIfNa(row.LogicalOp))</span>
+                                    }
+                                </span>
                                 @if (row.IsParallel)
                                 {
                                 <span class="tree-pill">Parallel</span>
@@ -192,8 +195,8 @@ else
                             </div>
                             <div class="tree-summary">@BlankIfNa(row.Summary)</div>
                         </td>
-                        <td class="logical-col sticky-col sticky-col-3">@BlankIfNa(row.LogicalOp)</td>
-                        <td class="object-col" title="@BlankIfNa(row.ObjectName)">@BlankIfNa(row.ObjectName)</td>
+                        <td class="object-col sticky-col sticky-col-3" title="@BlankIfNa(row.ObjectName)">@BlankIfNa(row.ObjectName)</td>
+                        <td class="numeric warning-col">@FormatWarningCount(row.WarningCount)</td>
                         <td class="numeric">@PlanDisplayFormatter.FormatPercent(row.CostRatio)</td>
                         <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatCost(row.EstimatedSubtreeCost))</td>
                         <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatCost(row.EstimatedCpuCost))</td>
@@ -206,7 +209,6 @@ else
                         <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatNumber(row.ActualPhysicalReads))</td>
                         <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatNumber(row.ActualCpuMs))</td>
                         <td class="numeric">@BlankIfNa(PlanDisplayFormatter.FormatNumber(row.ActualElapsedMs))</td>
-                        <td class="numeric warning-col">@row.WarningCount</td>
                     </tr>
                 }
             </tbody>
@@ -222,7 +224,10 @@ else
     public string? SelectedNodeId { get; set; }
 
     [Parameter]
-    public int FocusRequestVersion { get; set; }
+    public int ExpandRequestVersion { get; set; }
+
+    [Parameter]
+    public int ScrollRequestVersion { get; set; }
 
     [Parameter]
     public EventCallback<string> OnSelectNode { get; set; }
@@ -235,15 +240,15 @@ else
     private bool sortDescending;
     private string? locallySelectedNodeId;
     private string? EffectiveSelectedNodeId => SelectedNodeId ?? locallySelectedNodeId;
-    private int previousFocusRequestVersion = -1;
-    private bool focusSelectedRowPending;
+    private int? previousExpandRequestVersion;
+    private int? previousScrollRequestVersion;
+    private bool scrollSelectedRowPending;
     private ElementReference tableShellRef;
 
     private enum SortColumn
     {
         NodeId,
         PhysicalOp,
-        LogicalOp,
         ObjectName,
         CostRatio,
         EstimatedSubtreeCost,
@@ -270,24 +275,41 @@ else
             locallySelectedNodeId = SelectedNodeId;
         }
 
-        if (previousFocusRequestVersion != FocusRequestVersion)
+        if (previousExpandRequestVersion is null)
         {
-            previousFocusRequestVersion = FocusRequestVersion;
+            previousExpandRequestVersion = ExpandRequestVersion;
+        }
+        else if (previousExpandRequestVersion != ExpandRequestVersion)
+        {
+            previousExpandRequestVersion = ExpandRequestVersion;
 
             if (!string.IsNullOrWhiteSpace(SelectedNodeId))
             {
                 ExpandAncestorPath(SelectedNodeId);
-                focusSelectedRowPending = true;
+            }
+        }
+
+        if (previousScrollRequestVersion is null)
+        {
+            previousScrollRequestVersion = ScrollRequestVersion;
+        }
+        else if (previousScrollRequestVersion != ScrollRequestVersion)
+        {
+            previousScrollRequestVersion = ScrollRequestVersion;
+
+            if (!string.IsNullOrWhiteSpace(SelectedNodeId))
+            {
+                scrollSelectedRowPending = true;
             }
         }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (focusSelectedRowPending && !string.IsNullOrWhiteSpace(EffectiveSelectedNodeId))
+        if (scrollSelectedRowPending && !string.IsNullOrWhiteSpace(EffectiveSelectedNodeId))
         {
-            focusSelectedRowPending = false;
-            await JS.InvokeVoidAsync("mssqlPlanViewerGraphPan.focusTableRow", tableShellRef, EffectiveSelectedNodeId);
+            scrollSelectedRowPending = false;
+            await JS.InvokeVoidAsync("mssqlPlanViewerGraphPan.scrollTableRowIntoView", tableShellRef, EffectiveSelectedNodeId);
         }
     }
 
@@ -309,6 +331,9 @@ else
 
     private static string BlankIfNa(string value) =>
         string.Equals(value, "n/a", StringComparison.OrdinalIgnoreCase) ? string.Empty : value;
+
+    private static string FormatWarningCount(int warningCount) =>
+        warningCount > 0 ? warningCount.ToString(System.Globalization.CultureInfo.InvariantCulture) : string.Empty;
 
     private static bool IsScanRow(PlanTableRow row) =>
         row.PhysicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase)
@@ -341,7 +366,7 @@ else
         }
 
         sortColumn = column;
-        sortDescending = column is not (SortColumn.NodeId or SortColumn.PhysicalOp or SortColumn.LogicalOp or SortColumn.ObjectName);
+        sortDescending = column is not (SortColumn.NodeId or SortColumn.PhysicalOp or SortColumn.ObjectName);
     }
 
     private string GetAriaSort(SortColumn column) =>
@@ -404,7 +429,6 @@ else
         {
             SortColumn.NodeId => CompareNodeIds(left.NodeId, right.NodeId),
             SortColumn.PhysicalOp => CompareText(left.PhysicalOp, right.PhysicalOp),
-            SortColumn.LogicalOp => CompareText(left.LogicalOp, right.LogicalOp),
             SortColumn.ObjectName => CompareText(BlankIfNa(left.ObjectName), BlankIfNa(right.ObjectName)),
             SortColumn.CostRatio => CompareNullable(left.CostRatio, right.CostRatio),
             SortColumn.EstimatedSubtreeCost => CompareNullable(left.EstimatedSubtreeCost, right.EstimatedSubtreeCost),

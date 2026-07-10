@@ -8,8 +8,18 @@ public static class PlanDisplayFormatter
     public static string FormatCost(decimal? value) =>
         value.HasValue ? value.Value.ToString("#,0.####", CultureInfo.InvariantCulture) : "n/a";
 
-    public static string FormatPercent(decimal value) =>
-        $"{Math.Round(value * 100m, 0, MidpointRounding.AwayFromZero):0}%";
+    public static string FormatPercent(decimal value)
+    {
+        if (value <= 0)
+        {
+            return "0%";
+        }
+
+        var percent = value * 100m;
+        return percent < 1m
+            ? "<1%"
+            : $"{Math.Round(percent, 0, MidpointRounding.AwayFromZero):0}%";
+    }
 
     public static string FormatNumber(double? value)
     {

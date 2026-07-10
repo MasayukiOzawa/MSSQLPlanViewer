@@ -10,4 +10,7 @@ public sealed record PlanThreadRuntimeMetrics(
     double? ActualCpuMs,
     double? ActualElapsedMs,
     double? ActualRebinds,
-    double? ActualRewinds);
+    double? ActualRewinds)
+{
+    public string? ActualExecutionMode { get; init; }
+}

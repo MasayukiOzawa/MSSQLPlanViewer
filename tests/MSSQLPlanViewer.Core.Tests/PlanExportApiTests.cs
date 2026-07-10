@@ -104,7 +104,7 @@ public sealed class PlanExportApiTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Equal("image/svg+xml", response.Content.Headers.ContentType?.MediaType);
         var body = await response.Content.ReadAsStringAsync();
         Assert.StartsWith("<svg", body, StringComparison.Ordinal);
-        Assert.Contains("M 332 80 C 296 80, 312 68, 276 68", body, StringComparison.Ordinal);
+        Assert.Contains("M 472 179 C 436 179, 312 68, 276 68", body, StringComparison.Ordinal);
     }
 
     [Fact]

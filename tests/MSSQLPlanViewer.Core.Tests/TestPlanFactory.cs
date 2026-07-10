@@ -43,6 +43,8 @@ internal static class TestPlanFactory
         PlanObjectReference? objectReference = null,
         PlanRuntimeMetrics? runtimeMetrics = null,
         double? estimatedRows = null,
+        decimal? estimatedCpuCost = null,
+        decimal? estimatedIoCost = null,
         IReadOnlyList<PlanProperty>? properties = null,
         IReadOnlyList<PlanProperty>? xmlAttributes = null,
         IReadOnlyList<PlanProperty>? detailXmlAttributes = null,
@@ -52,8 +54,8 @@ internal static class TestPlanFactory
             PhysicalOp: physicalOp,
             LogicalOp: logicalOp,
             EstimatedSubtreeCost: subtreeCost,
-            EstimatedCpuCost: null,
-            EstimatedIoCost: null,
+            EstimatedCpuCost: estimatedCpuCost,
+            EstimatedIoCost: estimatedIoCost,
             EstimatedRows: estimatedRows,
             AverageRowSize: null,
             IsParallel: isParallel,
@@ -76,7 +78,9 @@ internal static class TestPlanFactory
         IReadOnlyList<string>? rootNodeIds = null,
         IReadOnlyList<PlanWarning>? warnings = null,
         StatementPlanSummary? summary = null,
-        string statementId = "1") =>
+        string statementId = "1",
+        int batchNumber = 1,
+        int statementOrdinal = 1) =>
         new(
             StatementId: statementId,
             StatementType: "SELECT",
@@ -85,5 +89,9 @@ internal static class TestPlanFactory
             Nodes: nodes,
             Edges: edges ?? Array.Empty<PlanEdge>(),
             Warnings: warnings ?? Array.Empty<PlanWarning>(),
-            RootNodeIds: rootNodeIds ?? Array.Empty<string>());
+            RootNodeIds: rootNodeIds ?? Array.Empty<string>())
+        {
+            BatchNumber = batchNumber,
+            StatementOrdinal = statementOrdinal
+        };
 }

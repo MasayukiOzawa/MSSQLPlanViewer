@@ -1,12 +1,19 @@
-using System.Globalization;
 using System.Xml.Linq;
 using MSSQLPlanViewer.Core.Formatting;
+using static MSSQLPlanViewer.Core.Rendering.SvgPrimitives;
 
 namespace MSSQLPlanViewer.Core.Rendering;
 
 public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
 {
     private const string SvgNamespace = "http://www.w3.org/2000/svg";
+
+    private const string MetricFontSize = "11";
+    private const string EdgeFlowFontSize = "12";
+    private const string MetricFill = "#64748b";
+    private const string CriticalColor = "#7c3aed";
+    private const double CriticalEdgeStrokeWidth = 5d;
+    private const double MetricSeparatorBottomMargin = 15d;
 
     public string Render(StatementGraphLayout layout, GraphRenderOptions? options = null)
     {
@@ -52,6 +59,15 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
             root.Add(BuildEdge(ns, edge, options, layout.Direction));
         }
 
+        foreach (var edge in layout.Edges)
+        {
+            var edgeLabel = BuildEdgeFlowLabel(ns, edge, layout.Direction);
+            if (edgeLabel is not null)
+            {
+                root.Add(edgeLabel);
+            }
+        }
+
         if (layout.StatementNode is not null)
         {
             root.Add(BuildStatementNode(ns, layout.StatementNode));
@@ -69,20 +85,21 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
         new(
             ns + "defs",
             BuildMarker(ns, "arrow", "#94a3b8"),
-            BuildMarker(ns, "arrow-critical", "#7c3aed"));
+            BuildMarker(ns, "arrow-critical", CriticalColor));
 
     private static XElement BuildMarker(XNamespace ns, string id, string fill) =>
         new(
             ns + "marker",
             new XAttribute("id", id),
-            new XAttribute("markerWidth", "10"),
-            new XAttribute("markerHeight", "10"),
-            new XAttribute("refX", "5"),
-            new XAttribute("refY", "5"),
+            new XAttribute("markerWidth", "8"),
+            new XAttribute("markerHeight", "8"),
+            new XAttribute("refX", "7"),
+            new XAttribute("refY", "4"),
             new XAttribute("orient", "auto"),
+            new XAttribute("markerUnits", "userSpaceOnUse"),
             new XElement(
                 ns + "path",
-                new XAttribute("d", "M 0 0 L 10 5 L 0 10 z"),
+                new XAttribute("d", "M 0 0 L 8 4 L 0 8 z"),
                 new XAttribute("fill", fill)));
 
     private static XElement BuildEdge(
@@ -93,12 +110,13 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
         bool isDashed = false)
     {
         var isCritical = options.ShowCriticalPath && edge.IsOnCriticalPath;
+        var strokeWidth = ResolveEdgeStrokeWidth(edge, isCritical);
         var element = new XElement(
             ns + "path",
             new XAttribute("d", PlanGraphSvgPathBuilder.BuildEdgePath(edge, direction)),
             new XAttribute("fill", "none"),
-            new XAttribute("stroke", isCritical ? "#7c3aed" : "#94a3b8"),
-            new XAttribute("stroke-width", isCritical ? "3.4" : "2.2"),
+            new XAttribute("stroke", isCritical ? CriticalColor : "#94a3b8"),
+            new XAttribute("stroke-width", Format(strokeWidth)),
             new XAttribute("marker-end", isCritical ? "url(#arrow-critical)" : "url(#arrow)"));
 
         if (isDashed)
@@ -109,31 +127,77 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
         return element;
     }
 
+    private static double ResolveEdgeStrokeWidth(GraphEdgeLayout edge, bool isCritical) =>
+        isCritical
+            ? Math.Max(edge.StrokeWidth, CriticalEdgeStrokeWidth)
+            : edge.StrokeWidth;
+
+    private static XElement? BuildEdgeFlowLabel(XNamespace ns, GraphEdgeLayout edge, GraphLayoutDirection direction)
+    {
+        if (!edge.EstimatedRows.HasValue && !edge.ActualRows.HasValue)
+        {
+            return null;
+        }
+
+        const string estimatedRowsName = "Est rows";
+        const string actualRowsName = "Act rows";
+        var estimatedRowsValue = PlanDisplayFormatter.FormatNumber(edge.EstimatedRows);
+        var actualRowsValue = PlanDisplayFormatter.FormatNumber(edge.ActualRows);
+        var maxNameLength = Math.Max(estimatedRowsName.Length, actualRowsName.Length);
+        var maxValueLength = Math.Max(estimatedRowsValue.Length, actualRowsValue.Length);
+        var width = Math.Clamp(((maxNameLength + maxValueLength) * 6.3d) + 34d, 112d, 192d);
+        var height = 44d;
+        var (x, y) = ResolveEdgeFlowLabelPosition(edge, direction, width);
+        var labelX = x - (width / 2d) + 12d;
+        var valueX = x + (width / 2d) - 12d;
+
+        return new XElement(
+            ns + "g",
+            new XElement(
+                ns + "rect",
+                new XAttribute("x", Format(x - (width / 2d))),
+                new XAttribute("y", Format(y - 26d)),
+                new XAttribute("width", Format(width)),
+                new XAttribute("height", Format(height)),
+                new XAttribute("rx", "6"),
+                new XAttribute("ry", "6"),
+                new XAttribute("fill", "#ffffff"),
+                new XAttribute("fill-opacity", "0.92")),
+            BuildEdgeFlowText(ns, labelX, y - 8d, estimatedRowsName, "start"),
+            BuildEdgeFlowText(ns, valueX, y - 8d, estimatedRowsValue, "end"),
+            BuildEdgeFlowText(ns, labelX, y + 11d, actualRowsName, "start"),
+            BuildEdgeFlowText(ns, valueX, y + 11d, actualRowsValue, "end"));
+    }
+
+    private static (double X, double Y) ResolveEdgeFlowLabelPosition(GraphEdgeLayout edge, GraphLayoutDirection direction, double width)
+    {
+        var lineX = (edge.X1 + edge.X2) / 2d;
+        var lineY = (edge.Y1 + edge.Y2) / 2d;
+        var horizontalClearance = 30d + (edge.StrokeWidth / 2d);
+        var verticalClearance = 18d + (edge.StrokeWidth / 2d);
+
+        return direction == GraphLayoutDirection.HorizontalSsms
+            ? (lineX, lineY - horizontalClearance)
+            : (lineX + (width / 2d) + verticalClearance, lineY);
+    }
+
+    private static XElement BuildEdgeFlowText(XNamespace ns, double x, double y, string label, string textAnchor) =>
+        new(
+            ns + "text",
+            new XAttribute("x", Format(x)),
+            new XAttribute("y", Format(y)),
+            new XAttribute("font-size", EdgeFlowFontSize),
+            new XAttribute("font-weight", "400"),
+            new XAttribute("fill", "#334155"),
+            new XAttribute("text-anchor", textAnchor),
+            label);
+
     private static XElement BuildNode(XNamespace ns, GraphNodeLayout node, GraphRenderOptions options)
     {
         var icon = OperatorIconRegistry.Resolve(node.PhysicalOp, node.LogicalOp);
-        var isScan = IsScanOperator(node, icon);
         var isCriticalNode = options.ShowCriticalPath && node.IsOnCriticalPath;
         var costEmphasisLevel = GraphCostEmphasis.Resolve(node.CostRatio, options.CostHighlightThresholdPercent);
-        var costEmphasisStyle = GraphCostEmphasis.GetStyle(costEmphasisLevel);
         var isCostEmphasized = GraphCostEmphasis.IsEmphasized(costEmphasisLevel);
-        var hasDashedOutline = isCostEmphasized;
-        var bodyX = node.X;
-        var bodyY = node.Y;
-        var iconTileX = bodyX + 16;
-        var iconTileY = bodyY + 18;
-        var iconOriginX = iconTileX + 8;
-        var iconOriginY = iconTileY + 8;
-        var contentX = bodyX + 66;
-        var contentY = bodyY + 29;
-        var meterRatio = (double)Math.Max(0.08m, node.CostRatio);
-        var meterWidth = Math.Max(18d, (node.Width - 32) * meterRatio);
-        var meterHeight = isCostEmphasized ? 7d : 4d;
-        var meterY = bodyY + node.Height - (isCostEmphasized ? 15d : 12d);
-        var badgeWidth = 84d;
-        var badgeHeight = 24d;
-        var badgeX = bodyX + node.Width - badgeWidth - 12d;
-        var badgeY = bodyY - 12d;
         var accentFill = GetAccentFill(node, icon);
 
         var group = new XElement(
@@ -143,37 +207,97 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
         if (isCostEmphasized)
         {
             group.SetAttributeValue("data-cost-emphasis", costEmphasisLevel.ToString());
-            group.Add(
-                new XElement(
-                    ns + "rect",
-                    new XAttribute("x", Format(bodyX - 13)),
-                    new XAttribute("y", Format(bodyY - 13)),
-                    new XAttribute("width", Format(node.Width + 26)),
-                    new XAttribute("height", Format(node.Height + 26)),
-                    new XAttribute("rx", "30"),
-                    new XAttribute("ry", "30"),
-                    new XAttribute("fill", costEmphasisStyle.HaloFill),
-                    new XAttribute("fill-opacity", "0.72"),
-                    new XAttribute("stroke", costEmphasisStyle.HaloStroke),
-                    new XAttribute("stroke-opacity", "0.5"),
-                    new XAttribute("stroke-width", "2")));
+            AddEmphasisHalo(ns, group, node, costEmphasisLevel);
         }
 
-        if (isScan)
+        if (IsScanOperator(node, icon))
         {
-            group.Add(
-                new XElement(
-                    ns + "rect",
-                    new XAttribute("x", Format(bodyX - 9)),
-                    new XAttribute("y", Format(bodyY - 9)),
-                    new XAttribute("width", Format(node.Width + 18)),
-                    new XAttribute("height", Format(node.Height + 18)),
-                    new XAttribute("rx", "27"),
-                    new XAttribute("ry", "27"),
-                    new XAttribute("fill", "none"),
-                    new XAttribute("stroke", "#ef4444"),
-                    new XAttribute("stroke-width", "5")));
+            AddOutlineRect(ns, group, node, inset: 9, radius: 27, stroke: "#ef4444", strokeWidth: "5");
         }
+
+        AddCardChrome(ns, group, node, accentFill, isCriticalNode);
+
+        if (isCostEmphasized)
+        {
+            AddDashedOutline(ns, group, node, costEmphasisLevel);
+        }
+
+        if (isCriticalNode)
+        {
+            AddOutlineRect(ns, group, node, inset: 3, radius: 21, stroke: CriticalColor, strokeWidth: "3.5");
+        }
+
+        AddIconArea(ns, group, node, icon, accentFill, isCriticalNode);
+        AddNodeLabels(ns, group, node);
+        AddCostMeter(ns, group, node, icon, costEmphasisLevel, isCostEmphasized);
+
+        return group;
+    }
+
+    private static void AddEmphasisHalo(XNamespace ns, XElement group, GraphNodeLayout node, GraphCostEmphasisLevel costEmphasisLevel)
+    {
+        var style = GraphCostEmphasis.GetStyle(costEmphasisLevel);
+        group.Add(
+            new XElement(
+                ns + "rect",
+                new XAttribute("x", Format(node.X - 13)),
+                new XAttribute("y", Format(node.Y - 13)),
+                new XAttribute("width", Format(node.Width + 26)),
+                new XAttribute("height", Format(node.Height + 26)),
+                new XAttribute("rx", "30"),
+                new XAttribute("ry", "30"),
+                new XAttribute("fill", style.HaloFill),
+                new XAttribute("fill-opacity", "0.72"),
+                new XAttribute("stroke", style.HaloStroke),
+                new XAttribute("stroke-opacity", "0.5"),
+                new XAttribute("stroke-width", "2")));
+    }
+
+    private static void AddOutlineRect(
+        XNamespace ns,
+        XElement group,
+        GraphNodeLayout node,
+        double inset,
+        double radius,
+        string stroke,
+        string strokeWidth)
+    {
+        group.Add(
+            new XElement(
+                ns + "rect",
+                new XAttribute("x", Format(node.X - inset)),
+                new XAttribute("y", Format(node.Y - inset)),
+                new XAttribute("width", Format(node.Width + (inset * 2))),
+                new XAttribute("height", Format(node.Height + (inset * 2))),
+                new XAttribute("rx", Format(radius)),
+                new XAttribute("ry", Format(radius)),
+                new XAttribute("fill", "none"),
+                new XAttribute("stroke", stroke),
+                new XAttribute("stroke-width", strokeWidth)));
+    }
+
+    private static void AddDashedOutline(XNamespace ns, XElement group, GraphNodeLayout node, GraphCostEmphasisLevel costEmphasisLevel)
+    {
+        group.Add(
+            new XElement(
+                ns + "rect",
+                new XAttribute("x", Format(node.X - 6)),
+                new XAttribute("y", Format(node.Y - 6)),
+                new XAttribute("width", Format(node.Width + 12)),
+                new XAttribute("height", Format(node.Height + 12)),
+                new XAttribute("rx", "24"),
+                new XAttribute("ry", "24"),
+                new XAttribute("fill", "none"),
+                new XAttribute("stroke", GraphCostEmphasis.GetStyle(costEmphasisLevel).OutlineStroke),
+                new XAttribute("stroke-width", "3"),
+                new XAttribute("stroke-dasharray", "5 4")));
+    }
+
+    private static void AddCardChrome(XNamespace ns, XElement group, GraphNodeLayout node, string accentFill, bool isCriticalNode)
+    {
+        const double headerBandHeight = 24d;
+        var bodyX = node.X;
+        var bodyY = node.Y;
 
         group.Add(
             new XElement(
@@ -184,79 +308,49 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
                 new XAttribute("height", Format(node.Height)),
                 new XAttribute("rx", "18"),
                 new XAttribute("ry", "18"),
-                new XAttribute("fill", GetCardFill(node)),
+                new XAttribute("fill", GetCardFill(node, isCriticalNode)),
                 new XAttribute("stroke", GetCardStroke(node)),
                 new XAttribute("stroke-width", "2")));
 
         group.Add(
             new XElement(
                 ns + "rect",
-                new XAttribute("x", Format(bodyX)),
-                new XAttribute("y", Format(bodyY)),
-                new XAttribute("width", Format(node.Width)),
-                new XAttribute("height", "6"),
+                new XAttribute("x", Format(bodyX + 1)),
+                new XAttribute("y", Format(bodyY + 1)),
+                new XAttribute("width", Format(node.Width - 2)),
+                new XAttribute("height", Format(headerBandHeight)),
                 new XAttribute("rx", "18"),
                 new XAttribute("ry", "18"),
+                new XAttribute("fill", "#ffffff")));
+        group.Add(
+            new XElement(
+                ns + "rect",
+                new XAttribute("x", Format(bodyX + 1)),
+                new XAttribute("y", Format(bodyY + 12)),
+                new XAttribute("width", Format(node.Width - 2)),
+                new XAttribute("height", "13"),
+                new XAttribute("fill", "#ffffff")));
+        group.Add(
+            new XElement(
+                ns + "rect",
+                new XAttribute("x", Format(bodyX)),
+                new XAttribute("y", Format(bodyY + headerBandHeight)),
+                new XAttribute("width", Format(node.Width)),
+                new XAttribute("height", "5"),
                 new XAttribute("fill", accentFill)));
+        group.Add(BuildNodeIdLabel(ns, bodyX + (node.Width / 2d), bodyY + 17d, $"Node {node.NodeId}"));
+    }
 
-        if (hasDashedOutline)
-        {
-            group.Add(
-                new XElement(
-                    ns + "rect",
-                    new XAttribute("x", Format(bodyX - 6)),
-                    new XAttribute("y", Format(bodyY - 6)),
-                    new XAttribute("width", Format(node.Width + 12)),
-                    new XAttribute("height", Format(node.Height + 12)),
-                    new XAttribute("rx", "24"),
-                    new XAttribute("ry", "24"),
-                    new XAttribute("fill", "none"),
-                    new XAttribute("stroke", costEmphasisStyle.OutlineStroke),
-                    new XAttribute("stroke-width", "3"),
-                    new XAttribute("stroke-dasharray", "5 4")));
-        }
-
-        if (isCriticalNode)
-        {
-            group.Add(
-                new XElement(
-                    ns + "rect",
-                    new XAttribute("x", Format(bodyX - 3)),
-                    new XAttribute("y", Format(bodyY - 3)),
-                    new XAttribute("width", Format(node.Width + 6)),
-                    new XAttribute("height", Format(node.Height + 6)),
-                    new XAttribute("rx", "21"),
-                    new XAttribute("ry", "21"),
-                    new XAttribute("fill", "none"),
-                    new XAttribute("stroke", "#7c3aed"),
-                    new XAttribute("stroke-width", "2.5")));
-        }
-
-        if (isCostEmphasized)
-        {
-            group.Add(
-                new XElement(
-                    ns + "rect",
-                    new XAttribute("x", Format(badgeX)),
-                    new XAttribute("y", Format(badgeY)),
-                    new XAttribute("width", Format(badgeWidth)),
-                    new XAttribute("height", Format(badgeHeight)),
-                    new XAttribute("rx", "12"),
-                    new XAttribute("ry", "12"),
-                    new XAttribute("fill", costEmphasisStyle.BadgeFill),
-                    new XAttribute("stroke", costEmphasisStyle.BadgeStroke),
-                    new XAttribute("stroke-width", "1.5")));
-            group.Add(
-                new XElement(
-                    ns + "text",
-                    new XAttribute("x", Format(badgeX + badgeWidth / 2)),
-                    new XAttribute("y", Format(badgeY + 16)),
-                    new XAttribute("font-size", "10.5"),
-                    new XAttribute("font-weight", "800"),
-                    new XAttribute("fill", costEmphasisStyle.BadgeTextFill),
-                    new XAttribute("text-anchor", "middle"),
-                    $"Cost {PlanDisplayFormatter.FormatPercent(node.CostRatio)}"));
-        }
+    private static void AddIconArea(
+        XNamespace ns,
+        XElement group,
+        GraphNodeLayout node,
+        OperatorIconDescriptor icon,
+        string accentFill,
+        bool isCriticalNode)
+    {
+        var iconTileX = node.X + 16;
+        var iconTileY = node.Y + 40;
 
         group.Add(
             new XElement(
@@ -267,8 +361,8 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
                 new XAttribute("height", "34"),
                 new XAttribute("rx", "10"),
                 new XAttribute("ry", "10"),
-                new XAttribute("fill", "#f8fafc"),
-                new XAttribute("stroke", "#cbd5e1"),
+                new XAttribute("fill", GetIconTileFill(isCriticalNode)),
+                new XAttribute("stroke", isCriticalNode ? "#c4b5fd" : "#cbd5e1"),
                 new XAttribute("stroke-opacity", "0.28"),
                 new XAttribute("stroke-width", "1")));
 
@@ -279,34 +373,103 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
             new XAttribute("stroke-linecap", "round"),
             new XAttribute("stroke-linejoin", "round"),
             new XAttribute("stroke-width", "2"));
-        foreach (var element in BuildIcon(ns, icon.Kind, iconOriginX, iconOriginY, accentFill))
+        foreach (var element in OperatorIconSvgBuilder.BuildIcon(ns, icon.Kind, iconTileX + 8, iconTileY + 8, accentFill))
         {
             iconGroup.Add(element);
         }
 
         group.Add(iconGroup);
-        group.Add(BuildText(ns, contentX, contentY, Trim(node.PrimaryLabel, 30), "14", "#0f172a", "700"));
-        group.Add(BuildText(ns, contentX, contentY + 21, Trim(node.SecondaryLabel, 30), "11.5", "#334155", "400"));
-        group.Add(BuildText(
-            ns,
-            contentX,
-            contentY + 40,
-            $"Node {node.NodeId} | Cost {PlanDisplayFormatter.FormatPercent(node.CostRatio)}",
-            "11",
-            "#64748b",
-            "400"));
-        group.Add(BuildText(
-            ns,
-            contentX,
-            contentY + 56,
-            BuildRowsLabel(node),
-            "11",
-            "#64748b",
-            "400"));
+        var accessoryBadgeY = iconTileY + 40d;
+        if (node.IsParallel)
+        {
+            group.Add(OperatorIconSvgBuilder.BuildParallelBadge(ns, iconTileX + 3.5d, accessoryBadgeY, node.NodeId));
+            accessoryBadgeY += 30d;
+        }
+
+        if (node.HasImplicitConversion)
+        {
+            group.Add(OperatorIconSvgBuilder.BuildImplicitConversionBadge(ns, iconTileX + 3.5d, accessoryBadgeY, node.NodeId));
+        }
+    }
+
+    private static void AddNodeLabels(XNamespace ns, XElement group, GraphNodeLayout node)
+    {
+        var contentX = node.X + 66;
+        var metricValueX = node.X + node.Width - 24;
+        var contentY = node.Y + 47;
+        var secondaryLabels = BuildSecondaryLabels(node);
+        var hasIndexLabel = !string.IsNullOrWhiteSpace(secondaryLabels.IndexLabel);
+
+        group.Add(Text(ns, contentX, contentY, Trim(node.PrimaryLabel, 30), "14", "#0f172a", "700"));
+        group.Add(Text(ns, contentX, contentY + 21, secondaryLabels.TableLabel, "11.5", "#334155", "400"));
+        if (hasIndexLabel)
+        {
+            group.Add(Text(ns, contentX, contentY + 36, secondaryLabels.IndexLabel!, "11.5", "#334155", "400"));
+        }
+
+        var metrics = BuildNodeMetricRows(node);
+        var metricY = contentY + (hasIndexLabel ? 62 : 47);
+        if (metrics.Count > 0 && HasVisibleSecondaryLabel(secondaryLabels))
+        {
+            group.Add(BuildMetricSeparator(ns, contentX, metricY - MetricSeparatorBottomMargin, node.X + node.Width - 18));
+        }
+
+        NodeMetricGroup? previousMetricGroup = null;
+        foreach (var metric in metrics)
+        {
+            if (previousMetricGroup.HasValue && previousMetricGroup.Value != metric.Group)
+            {
+                var separatorY = ResolveMetricSeparatorY(metricY, metric.Spacing);
+                group.Add(BuildMetricSeparator(ns, contentX, separatorY, node.X + node.Width - 18));
+            }
+
+            metricY += metric.Spacing;
+            previousMetricGroup = metric.Group;
+            group.Add(Text(ns, contentX, metricY, metric.Label, MetricFontSize, MetricFill, "400"));
+            group.Add(BuildMetricValueText(ns, metricValueX, metricY, metric.Value));
+        }
+    }
+
+    private static XElement BuildMetricValueText(XNamespace ns, double x, double y, string value) =>
+        new(
+            ns + "text",
+            new XAttribute("x", Format(x)),
+            new XAttribute("y", Format(y)),
+            new XAttribute("font-size", MetricFontSize),
+            new XAttribute("font-weight", "400"),
+            new XAttribute("fill", MetricFill),
+            new XAttribute("text-anchor", "end"),
+            value);
+
+    private static XElement BuildMetricSeparator(XNamespace ns, double x1, double y, double x2) =>
+        new(
+            ns + "line",
+            new XAttribute("x1", Format(x1)),
+            new XAttribute("y1", Format(y)),
+            new XAttribute("x2", Format(x2)),
+            new XAttribute("y2", Format(y)),
+            new XAttribute("stroke", "#64748b"),
+            new XAttribute("stroke-width", "1"),
+            new XAttribute("stroke-opacity", "0.9"),
+            new XAttribute("data-metric-separator", "true"));
+
+    private static void AddCostMeter(
+        XNamespace ns,
+        XElement group,
+        GraphNodeLayout node,
+        OperatorIconDescriptor icon,
+        GraphCostEmphasisLevel costEmphasisLevel,
+        bool isCostEmphasized)
+    {
+        var meterRatio = (double)Math.Max(0.08m, node.CostRatio);
+        var meterWidth = Math.Max(18d, (node.Width - 32) * meterRatio);
+        var meterHeight = isCostEmphasized ? 7d : 4d;
+        var meterY = node.Y + node.Height - (isCostEmphasized ? 9d : 7d);
+
         group.Add(
             new XElement(
                 ns + "rect",
-                new XAttribute("x", Format(bodyX + 16)),
+                new XAttribute("x", Format(node.X + 16)),
                 new XAttribute("y", Format(meterY)),
                 new XAttribute("width", Format(node.Width - 32)),
                 new XAttribute("height", Format(meterHeight)),
@@ -316,16 +479,25 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
         group.Add(
             new XElement(
                 ns + "rect",
-                new XAttribute("x", Format(bodyX + 16)),
+                new XAttribute("x", Format(node.X + 16)),
                 new XAttribute("y", Format(meterY)),
                 new XAttribute("width", Format(meterWidth)),
                 new XAttribute("height", Format(meterHeight)),
                 new XAttribute("rx", Format(meterHeight / 2)),
                 new XAttribute("ry", Format(meterHeight / 2)),
                 new XAttribute("fill", GetMeterFill(node, icon, costEmphasisLevel))));
-
-        return group;
     }
+
+    private static XElement BuildNodeIdLabel(XNamespace ns, double x, double y, string label) =>
+        new(
+            ns + "text",
+            new XAttribute("x", Format(x)),
+            new XAttribute("y", Format(y)),
+            new XAttribute("font-size", "14"),
+            new XAttribute("font-weight", "700"),
+            new XAttribute("fill", "#0f172a"),
+            new XAttribute("text-anchor", "middle"),
+            label);
 
     private static XElement BuildStatementNode(XNamespace ns, StatementGraphNodeLayout node)
     {
@@ -354,16 +526,6 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
         group.Add(
             new XElement(
                 ns + "rect",
-                new XAttribute("x", Format(bodyX)),
-                new XAttribute("y", Format(bodyY)),
-                new XAttribute("width", Format(node.Width)),
-                new XAttribute("height", "6"),
-                new XAttribute("rx", "18"),
-                new XAttribute("ry", "18"),
-                new XAttribute("fill", accentFill)));
-        group.Add(
-            new XElement(
-                ns + "rect",
                 new XAttribute("x", Format(iconTileX)),
                 new XAttribute("y", Format(iconTileY)),
                 new XAttribute("width", "34"),
@@ -373,183 +535,20 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
                 new XAttribute("fill", "#dbeafe"),
                 new XAttribute("stroke", "#bfdbfe"),
                 new XAttribute("stroke-width", "1")));
-        group.Add(BuildStatementIcon(ns, iconTileX + 8, iconTileY + 8, accentFill));
-        group.Add(BuildText(ns, contentX, contentY, Trim(node.PrimaryLabel, 30), "14", "#0f172a", "700"));
-        group.Add(BuildText(ns, contentX, contentY + 21, Trim(node.SecondaryLabel, 30), "11.5", "#334155", "400"));
-        group.Add(BuildText(
-            ns,
-            contentX,
-            contentY + 42,
-            $"Statement {node.StatementId} | Query cost {PlanDisplayFormatter.FormatPercent(node.CostRatio)}",
-            "11",
-            "#64748b",
-            "400"));
+        group.Add(OperatorIconSvgBuilder.BuildStatementIcon(ns, iconTileX + 8, iconTileY + 8, accentFill));
+        group.Add(Text(ns, contentX, contentY, Trim(node.PrimaryLabel, 30), "14", "#0f172a", "700"));
         return group;
     }
 
-    private static XElement BuildStatementIcon(XNamespace ns, double x, double y, string accentFill)
+    private static string GetCardFill(GraphNodeLayout node, bool isCriticalNode)
     {
-        var group = new XElement(
-            ns + "g",
-            new XAttribute("stroke", accentFill),
-            new XAttribute("fill", "none"),
-            new XAttribute("stroke-linecap", "round"),
-            new XAttribute("stroke-linejoin", "round"),
-            new XAttribute("stroke-width", "2"));
-        group.Add(Rect(ns, x, y, 20, 20, 3));
-        group.Add(Line(ns, x + 5, y + 6, x + 15, y + 6));
-        group.Add(Line(ns, x + 5, y + 10, x + 15, y + 10));
-        group.Add(Line(ns, x + 5, y + 14, x + 12, y + 14));
-        return group;
-    }
-
-    private static IEnumerable<XElement> BuildIcon(XNamespace ns, OperatorIconKind kind, double x, double y, string accentFill)
-    {
-        switch (kind)
+        if (node.HasWarnings)
         {
-            case OperatorIconKind.Seek:
-                yield return Circle(ns, x + 7, y + 7, 6);
-                yield return Line(ns, x + 12, y + 12, x + 19, y + 19);
-                yield return Line(ns, x + 3, y + 7, x + 11, y + 7);
-                yield return Line(ns, x + 7, y + 3, x + 7, y + 11);
-                yield break;
-            case OperatorIconKind.Scan:
-                yield return Rect(ns, x, y, 20, 18, 3);
-                yield return Line(ns, x + 7, y, x + 7, y + 18);
-                yield return Line(ns, x + 14, y, x + 14, y + 18);
-                yield return Line(ns, x, y + 6, x + 20, y + 6);
-                yield return Line(ns, x, y + 12, x + 20, y + 12);
-                yield break;
-            case OperatorIconKind.NestedLoops:
-                yield return Circle(ns, x + 7, y + 9, 5);
-                yield return Circle(ns, x + 15, y + 9, 5);
-                yield return Path(ns, $"M {Format(x + 3)} {Format(y + 18)} C {Format(x + 6)} {Format(y + 13)}, {Format(x + 16)} {Format(y + 13)}, {Format(x + 19)} {Format(y + 18)}");
-                yield break;
-            case OperatorIconKind.MergeJoin:
-                yield return Path(ns, $"M {Format(x)} {Format(y + 4)} L {Format(x + 8)} {Format(y + 12)} L {Format(x)} {Format(y + 20)}");
-                yield return Path(ns, $"M {Format(x + 20)} {Format(y + 4)} L {Format(x + 12)} {Format(y + 12)} L {Format(x + 20)} {Format(y + 20)}");
-                yield return Line(ns, x + 8, y + 12, x + 12, y + 12);
-                yield break;
-            case OperatorIconKind.HashMatch:
-                yield return Path(ns, $"M {Format(x + 10)} {Format(y)} L {Format(x + 20)} {Format(y + 6)} L {Format(x + 20)} {Format(y + 18)} L {Format(x + 10)} {Format(y + 24)} L {Format(x)} {Format(y + 18)} L {Format(x)} {Format(y + 6)} Z");
-                yield return Line(ns, x + 6, y + 6, x + 14, y + 18);
-                yield return Line(ns, x + 14, y + 6, x + 6, y + 18);
-                yield break;
-            case OperatorIconKind.Sort:
-                yield return Line(ns, x, y + 5, x + 17, y + 5);
-                yield return Line(ns, x, y + 12, x + 12, y + 12);
-                yield return Line(ns, x, y + 19, x + 7, y + 19);
-                yield return Path(ns, $"M {Format(x + 19)} {Format(y + 3)} L {Format(x + 23)} {Format(y + 5)} L {Format(x + 19)} {Format(y + 7)}");
-                yield return Path(ns, $"M {Format(x + 14)} {Format(y + 10)} L {Format(x + 18)} {Format(y + 12)} L {Format(x + 14)} {Format(y + 14)}");
-                yield return Path(ns, $"M {Format(x + 9)} {Format(y + 17)} L {Format(x + 13)} {Format(y + 19)} L {Format(x + 9)} {Format(y + 21)}");
-                yield break;
-            case OperatorIconKind.Filter:
-                yield return Path(ns, $"M {Format(x)} {Format(y + 2)} L {Format(x + 20)} {Format(y + 2)} L {Format(x + 12)} {Format(y + 12)} L {Format(x + 12)} {Format(y + 20)} L {Format(x + 8)} {Format(y + 18)} L {Format(x + 8)} {Format(y + 12)} Z");
-                yield break;
-            case OperatorIconKind.ComputeScalar:
-                yield return Rect(ns, x, y, 20, 20, 4);
-                yield return Line(ns, x + 6, y + 10, x + 14, y + 10);
-                yield return Line(ns, x + 10, y + 6, x + 10, y + 14);
-                yield return Circle(ns, x + 16, y + 16, 1.5, accentFill, "none");
-                yield break;
-            case OperatorIconKind.Parallelism:
-                yield return Path(ns, $"M {Format(x + 10)} {Format(y + 2)} L {Format(x + 10)} {Format(y + 10)}");
-                yield return Path(ns, $"M {Format(x + 10)} {Format(y + 10)} L {Format(x + 4)} {Format(y + 18)}");
-                yield return Path(ns, $"M {Format(x + 10)} {Format(y + 10)} L {Format(x + 16)} {Format(y + 18)}");
-                yield return Path(ns, $"M {Format(x + 10)} {Format(y + 2)} L {Format(x + 7)} {Format(y + 5)}");
-                yield return Path(ns, $"M {Format(x + 10)} {Format(y + 2)} L {Format(x + 13)} {Format(y + 5)}");
-                yield break;
-            case OperatorIconKind.Aggregate:
-                yield return Rect(ns, x, y + 12, 4, 8, 1);
-                yield return Rect(ns, x + 7, y + 8, 4, 12, 1);
-                yield return Rect(ns, x + 14, y + 4, 4, 16, 1);
-                yield break;
-            case OperatorIconKind.KeyLookup:
-                yield return Circle(ns, x + 7, y + 9, 4.5);
-                yield return Line(ns, x + 11, y + 9, x + 20, y + 9);
-                yield return Line(ns, x + 16, y + 9, x + 16, y + 14);
-                yield return Line(ns, x + 19, y + 9, x + 19, y + 12);
-                yield break;
-            case OperatorIconKind.Spool:
-                yield return Ellipse(ns, x + 10, y + 4, 8, 3.5);
-                yield return Path(ns, $"M {Format(x + 2)} {Format(y + 4)} V {Format(y + 18)} C {Format(x + 2)} {Format(y + 22)}, {Format(x + 18)} {Format(y + 22)}, {Format(x + 18)} {Format(y + 18)} V {Format(y + 4)}");
-                yield return Ellipse(ns, x + 10, y + 18, 8, 3.5);
-                yield break;
-            case OperatorIconKind.ConstantScan:
-                yield return Rect(ns, x, y, 20, 20, 4);
-                yield return Line(ns, x + 5, y + 7, x + 15, y + 7);
-                yield return Line(ns, x + 5, y + 12, x + 15, y + 12);
-                yield break;
-            default:
-                yield return Rect(ns, x, y, 20, 20, 4);
-                yield return Path(ns, $"M {Format(x + 5)} {Format(y + 14)} L {Format(x + 10)} {Format(y + 5)} L {Format(x + 15)} {Format(y + 14)} Z");
-                yield break;
-        }
-    }
-
-    private static XElement BuildText(XNamespace ns, double x, double y, string value, string fontSize, string fill, string fontWeight) =>
-        new(
-            ns + "text",
-            new XAttribute("x", Format(x)),
-            new XAttribute("y", Format(y)),
-            new XAttribute("font-size", fontSize),
-            new XAttribute("font-weight", fontWeight),
-            new XAttribute("fill", fill),
-            value);
-
-    private static XElement Rect(XNamespace ns, double x, double y, double width, double height, double radius) =>
-        new(
-            ns + "rect",
-            new XAttribute("x", Format(x)),
-            new XAttribute("y", Format(y)),
-            new XAttribute("width", Format(width)),
-            new XAttribute("height", Format(height)),
-            new XAttribute("rx", Format(radius)),
-            new XAttribute("ry", Format(radius)));
-
-    private static XElement Circle(XNamespace ns, double cx, double cy, double r, string? fill = null, string? stroke = null)
-    {
-        var element = new XElement(
-            ns + "circle",
-            new XAttribute("cx", Format(cx)),
-            new XAttribute("cy", Format(cy)),
-            new XAttribute("r", Format(r)));
-        if (fill is not null)
-        {
-            element.SetAttributeValue("fill", fill);
+            return "#fffbeb";
         }
 
-        if (stroke is not null)
-        {
-            element.SetAttributeValue("stroke", stroke);
-        }
-
-        return element;
+        return isCriticalNode ? "#f5f3ff" : "#ffffff";
     }
-
-    private static XElement Ellipse(XNamespace ns, double cx, double cy, double rx, double ry) =>
-        new(
-            ns + "ellipse",
-            new XAttribute("cx", Format(cx)),
-            new XAttribute("cy", Format(cy)),
-            new XAttribute("rx", Format(rx)),
-            new XAttribute("ry", Format(ry)));
-
-    private static XElement Line(XNamespace ns, double x1, double y1, double x2, double y2) =>
-        new(
-            ns + "line",
-            new XAttribute("x1", Format(x1)),
-            new XAttribute("y1", Format(y1)),
-            new XAttribute("x2", Format(x2)),
-            new XAttribute("y2", Format(y2)));
-
-    private static XElement Path(XNamespace ns, string d) =>
-        new(
-            ns + "path",
-            new XAttribute("d", d));
-
-    private static string GetCardFill(GraphNodeLayout node) =>
-        node.HasWarnings ? "#fffbeb" : "#ffffff";
 
     private static string GetCardStroke(GraphNodeLayout node) =>
         node.HasWarnings ? "#f59e0b" : "#cbd5e1";
@@ -574,17 +573,95 @@ public sealed class PlanGraphSvgRenderer : IPlanGraphSvgRenderer
             ? GraphCostEmphasis.GetStyle(costEmphasisLevel).MeterFill
             : GetAccentFill(node, icon);
 
+    private static string GetIconTileFill(bool isCriticalNode) =>
+        isCriticalNode ? "#ede9fe" : "#f8fafc";
+
     private static bool IsScanOperator(GraphNodeLayout node, OperatorIconDescriptor icon) =>
         icon.Kind is OperatorIconKind.Scan or OperatorIconKind.ConstantScan
         || node.PhysicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase)
         || node.LogicalOp.Contains("Scan", StringComparison.OrdinalIgnoreCase);
 
-    private static string BuildRowsLabel(GraphNodeLayout node) =>
-        $"Est rows {PlanDisplayFormatter.FormatNumber(node.EstimatedRows)} | Actual {PlanDisplayFormatter.FormatNumber(node.ActualRows)}";
+    private static double ResolveMetricSeparatorY(double currentMetricY, double nextMetricSpacing) =>
+        currentMetricY + Math.Max(4d, nextMetricSpacing - MetricSeparatorBottomMargin);
+
+    private static IReadOnlyList<NodeMetricRow> BuildNodeMetricRows(GraphNodeLayout node)
+    {
+        var rows = new List<NodeMetricRow>
+        {
+            new("Cost", PlanDisplayFormatter.FormatPercent(node.CostRatio), 0, NodeMetricGroup.Cost)
+        };
+
+        AddNumberMetric(rows, "Average Row Size", node.AverageRowSize, 22, NodeMetricGroup.AverageRowSize);
+        AddNumberMetric(rows, "Estimated Rows", node.EstimatedRows, 22, NodeMetricGroup.Estimated);
+        AddNumberMetric(rows, "Estimated Executions", node.EstimatedExecutions, 14, NodeMetricGroup.Estimated);
+        AddTextMetric(rows, "Estimated Mode", node.EstimatedExecutionMode, 14, NodeMetricGroup.Estimated);
+        AddNumberMetric(rows, "Actual Rows", node.ActualRows, 22, NodeMetricGroup.Actual);
+        AddNumberMetric(rows, "Actual Executions", node.ActualExecutions, 14, NodeMetricGroup.Actual);
+        AddTextMetric(rows, "Actual Mode", node.ActualExecutionMode, 14, NodeMetricGroup.Actual);
+        AddNumberMetric(rows, "Actual Logical Reads", node.ActualLogicalReads, 14, NodeMetricGroup.Actual);
+        AddNumberMetric(rows, "Actual Physical Reads", node.ActualPhysicalReads, 14, NodeMetricGroup.Actual);
+        AddMillisecondsMetric(rows, "Actual CPU", node.ActualCpuMs, 14, NodeMetricGroup.Actual);
+        AddMillisecondsMetric(rows, "Actual Elapsed", node.ActualElapsedMs, 14, NodeMetricGroup.Actual);
+
+        return rows;
+    }
+
+    private static void AddNumberMetric(ICollection<NodeMetricRow> rows, string label, double? value, double spacing, NodeMetricGroup group)
+    {
+        if (value.HasValue)
+        {
+            rows.Add(new NodeMetricRow(label, PlanDisplayFormatter.FormatNumber(value), spacing, group));
+        }
+    }
+
+    private static void AddTextMetric(ICollection<NodeMetricRow> rows, string label, string? value, double spacing, NodeMetricGroup group)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            rows.Add(new NodeMetricRow(label, value, spacing, group));
+        }
+    }
+
+    private static void AddMillisecondsMetric(ICollection<NodeMetricRow> rows, string label, double? value, double spacing, NodeMetricGroup group)
+    {
+        if (value.HasValue)
+        {
+            rows.Add(new NodeMetricRow(label, FormatMilliseconds(value.Value), spacing, group));
+        }
+    }
+
+    private static string FormatMilliseconds(double value) =>
+        $"{PlanDisplayFormatter.FormatNumber(value)} ms";
+
+    private static NodeSecondaryLabels BuildSecondaryLabels(GraphNodeLayout node)
+    {
+        const string separator = " / ";
+        var separatorIndex = node.SecondaryLabel.IndexOf(separator, StringComparison.Ordinal);
+        if (separatorIndex < 0)
+        {
+            return new NodeSecondaryLabels(Trim(node.SecondaryLabel, 30), null);
+        }
+
+        var tableLabel = node.SecondaryLabel[..separatorIndex];
+        var indexLabel = node.SecondaryLabel[(separatorIndex + separator.Length)..];
+        return new NodeSecondaryLabels(Trim(tableLabel, 30), Trim(indexLabel, 30));
+    }
+
+    private static bool HasVisibleSecondaryLabel(NodeSecondaryLabels labels) =>
+        !string.IsNullOrWhiteSpace(labels.TableLabel) || !string.IsNullOrWhiteSpace(labels.IndexLabel);
+
+    private sealed record NodeSecondaryLabels(string TableLabel, string? IndexLabel);
+
+    private enum NodeMetricGroup
+    {
+        Cost,
+        AverageRowSize,
+        Estimated,
+        Actual
+    }
+
+    private sealed record NodeMetricRow(string Label, string Value, double Spacing, NodeMetricGroup Group);
 
     private static string Trim(string text, int maxLength) =>
         text.Length <= maxLength ? text : $"{text[..(maxLength - 1)]}…";
-
-    private static string Format(double value) =>
-        value.ToString("0.###", CultureInfo.InvariantCulture);
 }

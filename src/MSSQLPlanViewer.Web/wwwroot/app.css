@@ -1,33 +1,51 @@
 :root {
     color-scheme: light;
+    --app-bg: #f6f8fb;
+    --app-surface: #ffffff;
+    --app-surface-muted: #f8fafc;
+    --app-border: #dbe3ef;
+    --app-border-strong: #cbd5e1;
+    --app-text: #0f172a;
+    --app-text-muted: #475569;
+    --app-text-subtle: #64748b;
+    --app-primary: #1d4ed8;
+    --app-primary-strong: #1e40af;
+    --app-accent: #0f766e;
+    --app-radius: 8px;
+    --app-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
 }
 
 html,
 body {
     margin: 0;
     font-family: Inter, "Segoe UI", Arial, sans-serif;
-    background: #f8fafc;
-    color: #0f172a;
+    background: var(--app-bg);
+    color: var(--app-text);
 }
 
 body {
     min-height: 100vh;
 }
 
+body.plan-panel-resizing {
+    cursor: nwse-resize;
+    user-select: none;
+}
+
 a,
 .btn-link {
-    color: #1d4ed8;
+    color: var(--app-primary);
 }
 
 .btn-primary {
     color: #fff;
-    background-color: #1d4ed8;
-    border-color: #1d4ed8;
+    background-color: var(--app-primary);
+    border-color: var(--app-primary);
 }
 
 .btn-primary:hover {
-    background-color: #1e40af;
-    border-color: #1e40af;
+    background-color: var(--app-primary-strong);
+    border-color: var(--app-primary-strong);
 }
 
 .btn:focus,
@@ -47,11 +65,11 @@ h3:focus {
 }
 
 .card-surface {
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 22px;
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius);
     padding: 1.25rem;
-    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+    box-shadow: var(--app-shadow);
 }
 
 .chip {
@@ -67,5 +85,5 @@ h3:focus {
 
 .empty-state {
     margin: 0;
-    color: #475569;
+    color: var(--app-text-muted);
 }
